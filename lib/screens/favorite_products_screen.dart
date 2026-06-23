@@ -94,8 +94,6 @@ class _FavoriteProductsScreenState extends State<FavoriteProductsScreen> {
     );
   }
 
-
-
   void openProduct(Product product) {
     Navigator.push(
       context,
@@ -182,12 +180,12 @@ class _FavoriteProductsScreenState extends State<FavoriteProductsScreen> {
                                 product: product,
                                 price: formatPrice(product.price),
                                 onTap: () => openProduct(product),
-                                onRemove: () => widget.onToggleFavorite(product),
+                                onRemove: () =>
+                                    widget.onToggleFavorite(product),
                               );
                             },
                           ),
                         ),
-
                     ],
                   ),
                 ),
