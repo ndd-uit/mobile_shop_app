@@ -26,7 +26,7 @@ void main() {
         onToggleFavorite: onToggleFavorite,
         onAddToCart: onAddToCart,
         customerProfile: const CustomerProfile(name: 'Thảo', phoneNumber: ''),
-        onOrderConfirmed: (_) {},
+        onOrderConfirmed: (_) async => true,
         onGoHome: () {},
         onViewOrders: () {},
         onBack: () {},
@@ -47,25 +47,25 @@ void main() {
     expect(removedProduct?.id, product.id);
   });
 
-  testWidgets('adds all visible favorites to cart with default size', (
-    tester,
-  ) async {
+  testWidgets('adds only selected favorites to cart', (tester) async {
     Product? addedProduct;
-    String? selectedSize;
+    String? addedSize;
     await tester.pumpWidget(
       buildScreen(
         onToggleFavorite: (_) {},
         onAddToCart: (product, size) {
           addedProduct = product;
-          selectedSize = size;
+          addedSize = size;
         },
       ),
     );
 
-    await tester.tap(find.text('Thêm tất cả vào giỏ hàng'));
+    await tester.tap(find.byType(Checkbox).last);
+    await tester.pump();
+    await tester.tap(find.text('Thêm 1 sản phẩm vào giỏ'));
     await tester.pump();
 
     expect(addedProduct?.id, product.id);
-    expect(selectedSize, 'M');
+    expect(addedSize, 'M');
   });
 }

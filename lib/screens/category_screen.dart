@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 
-import '../data/mock_products.dart';
 import '../models/product.dart';
 import '../models/customer_profile.dart';
 import '../models/shop_order.dart';
 import '../theme/app_theme.dart';
+import '../widgets/size_selection_bottom_sheet.dart';
 import 'product_detail_screen.dart';
 
 class CategoryScreen extends StatefulWidget {
   final CustomerProfile customerProfile;
   final void Function(Product product, String size) onAddToCart;
-  final ValueChanged<ShopOrder> onOrderConfirmed;
+  final Future<bool> Function(ShopOrder order) onOrderConfirmed;
   final VoidCallback onGoHome;
   final VoidCallback onViewOrders;
   final Set<String> favoriteProductIds;
   final ValueChanged<Product> onToggleFavorite;
+  final List<Product> products;
 
   const CategoryScreen({
     super.key,
@@ -25,6 +26,7 @@ class CategoryScreen extends StatefulWidget {
     required this.onViewOrders,
     required this.favoriteProductIds,
     required this.onToggleFavorite,
+    required this.products,
   });
 
   @override
@@ -55,7 +57,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
   List<Product> get searchResults {
     final query = searchQuery.trim().toLowerCase();
     if (query.isEmpty) return const [];
-    return mockProducts
+    return widget.products
         .where(
           (product) =>
               product.name.toLowerCase().contains(query) ||
@@ -208,12 +210,14 @@ class _CategoryScreenState extends State<CategoryScreen> {
           itemBuilder: (context, index) {
             final image = selectedCategory == 'Váy'
                 ? dressImages[index]
-                : mockProducts[index % mockProducts.length].imageUrl;
+                : widget.products.isEmpty
+                ? ''
+                : widget.products[index % widget.products.length].imageUrl;
             return _SubcategoryCard(
               name: names[index],
               imageUrl: image,
               onTap: () {
-                final products = mockProducts
+                final products = widget.products
                     .where((product) => product.category == selectedCategory)
                     .toList();
                 if (products.isNotEmpty) {
@@ -284,6 +288,13 @@ class _CategoryScreenState extends State<CategoryScreen> {
               product: product,
               price: formatPrice(product.price),
               onTap: () => openProduct(product),
+              onAddToCart: () {
+                showSizeSelectionBottomSheet(
+                  context: context,
+                  product: product,
+                  onConfirm: (size) => widget.onAddToCart(product, size),
+                );
+              },
             );
           },
         ),
@@ -363,11 +374,13 @@ class _SearchProductCard extends StatelessWidget {
   final Product product;
   final String price;
   final VoidCallback onTap;
+  final VoidCallback onAddToCart;
 
   const _SearchProductCard({
     required this.product,
     required this.price,
     required this.onTap,
+    required this.onAddToCart,
   });
 
   @override
@@ -381,14 +394,40 @@ class _SearchProductCard extends StatelessWidget {
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                product.imageUrl,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  color: AppTheme.surfaceContainerLow,
-                  child: const Icon(Icons.image_not_supported_outlined),
-                ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    product.imageUrl,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      color: AppTheme.surfaceContainerLow,
+                      child: const Icon(Icons.image_not_supported_outlined),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Material(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: onAddToCart,
+                        child: const SizedBox(
+                          width: 34,
+                          height: 34,
+                          child: Icon(
+                            Icons.add_shopping_cart_outlined,
+                            color: AppTheme.primary,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

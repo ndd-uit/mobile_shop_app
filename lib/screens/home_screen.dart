@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 
-import '../data/mock_products.dart';
 import '../models/product.dart';
 import '../models/customer_profile.dart';
 import '../models/shop_order.dart';
 import '../theme/app_theme.dart';
+import '../widgets/size_selection_bottom_sheet.dart';
 import 'product_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final CustomerProfile customerProfile;
   final void Function(Product product, String size) onAddToCart;
-  final ValueChanged<ShopOrder> onOrderConfirmed;
+  final Future<bool> Function(ShopOrder order) onOrderConfirmed;
   final VoidCallback onGoHome;
   final VoidCallback onViewOrders;
   final Set<String> favoriteProductIds;
   final ValueChanged<Product> onToggleFavorite;
+  final List<Product> products;
 
   const HomeScreen({
     super.key,
@@ -25,6 +26,7 @@ class HomeScreen extends StatefulWidget {
     required this.onViewOrders,
     required this.favoriteProductIds,
     required this.onToggleFavorite,
+    required this.products,
   });
 
   @override
@@ -40,6 +42,11 @@ class _HomeScreenState extends State<HomeScreen> {
   String selectedCategory = 'Tất cả';
   String searchQuery = '';
 
+  // Filter & Sort state
+  _SortOption _sortOption = _SortOption.newest;
+  RangeValues _priceRange = const RangeValues(0, 5000000);
+  static const double _maxPrice = 5000000;
+
   final List<String> categories = const [
     'Tất cả',
     'Váy',
@@ -48,21 +55,70 @@ class _HomeScreenState extends State<HomeScreen> {
     'Phụ kiện',
   ];
 
+  bool get _hasActiveFilter =>
+      _priceRange.start > 0 ||
+      _priceRange.end < _maxPrice ||
+      _sortOption != _SortOption.newest;
+
   List<Product> get filteredProducts {
-    return mockProducts.where((product) {
+    var list = widget.products.where((product) {
       final matchCategory =
           selectedCategory == 'Tất cả' || product.category == selectedCategory;
-
       final matchSearch = product.name.toLowerCase().contains(
         searchQuery.toLowerCase(),
       );
-
-      return matchCategory && matchSearch;
+      final matchPrice =
+          product.price >= _priceRange.start &&
+          product.price <= _priceRange.end;
+      return matchCategory && matchSearch && matchPrice;
     }).toList();
+
+    switch (_sortOption) {
+      case _SortOption.newest:
+        break; // giữ thứ tự từ server
+      case _SortOption.priceAsc:
+        list.sort((a, b) => a.price.compareTo(b.price));
+      case _SortOption.priceDesc:
+        list.sort((a, b) => b.price.compareTo(a.price));
+      case _SortOption.ratingDesc:
+        list.sort((a, b) => b.rating.compareTo(a.rating));
+    }
+    return list;
   }
 
   String formatPrice(int price) {
     return '${price.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (match) => '${match[1]}.')}đ';
+  }
+
+  void _showFilterSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: AppTheme.surfaceContainerLowest,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) => _FilterSheet(
+        sortOption: _sortOption,
+        priceRange: _priceRange,
+        maxPrice: _maxPrice,
+        onApply: (sort, price) {
+          setState(() {
+            _sortOption = sort;
+            _priceRange = price;
+          });
+          Navigator.pop(sheetCtx);
+        },
+        onReset: () {
+          setState(() {
+            _sortOption = _SortOption.newest;
+            _priceRange = const RangeValues(0, _maxPrice);
+          });
+          Navigator.pop(sheetCtx);
+        },
+      ),
+    );
   }
 
   @override
@@ -96,7 +152,29 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
-          SizedBox(width: 40), // Spacer for center alignment
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.tune, color: onSurfaceVariant),
+                onPressed: _showFilterSheet,
+                tooltip: 'Lọc & Sắp xếp',
+              ),
+              if (_hasActiveFilter)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
       body: ListView(
@@ -126,23 +204,24 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 28),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
+            children: [
               Text(
                 'Sản phẩm mới',
-                style: TextStyle(
+                style: const TextStyle(
                   color: onSurface,
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              Text(
-                'Xem thêm',
-                style: TextStyle(
-                  color: primary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              if (products.isNotEmpty)
+                Text(
+                  '${products.length} sản phẩm',
+                  style: const TextStyle(
+                    color: onSurfaceVariant,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -167,6 +246,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   priceText: formatPrice(product.price),
                   isFavorite: widget.favoriteProductIds.contains(product.id),
                   onFavorite: () => widget.onToggleFavorite(product),
+                  onAddToCart: () {
+                    showSizeSelectionBottomSheet(
+                      context: context,
+                      product: product,
+                      onConfirm: (size) => widget.onAddToCart(product, size),
+                    );
+                  },
                   onTap: () {
                     Navigator.push(
                       context,
@@ -385,6 +471,7 @@ class _ProductCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool isFavorite;
   final VoidCallback onFavorite;
+  final VoidCallback onAddToCart;
 
   const _ProductCard({
     required this.product,
@@ -392,10 +479,12 @@ class _ProductCard extends StatelessWidget {
     required this.onTap,
     required this.isFavorite,
     required this.onFavorite,
+    required this.onAddToCart,
   });
 
   bool get isNew => product.id == 'p02';
   bool get isDiscount => product.id == 'p04';
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -452,6 +541,15 @@ class _ProductCard extends StatelessWidget {
                         textColor: Color(0xFF93000A),
                       ),
                     ),
+                  // ── Quick add button ──
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: _CircleIcon(
+                      icon: Icons.add_shopping_cart_outlined,
+                      onTap: onAddToCart,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -709,6 +807,272 @@ class _NoResult extends StatelessWidget {
             style: TextStyle(color: Color(0xFF514345), fontSize: 13),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Sort & Filter
+// ─────────────────────────────────────────────
+
+enum _SortOption { newest, priceAsc, priceDesc, ratingDesc }
+
+class _FilterSheet extends StatefulWidget {
+  final _SortOption sortOption;
+  final RangeValues priceRange;
+  final double maxPrice;
+  final void Function(_SortOption, RangeValues) onApply;
+  final VoidCallback onReset;
+
+  const _FilterSheet({
+    required this.sortOption,
+    required this.priceRange,
+    required this.maxPrice,
+    required this.onApply,
+    required this.onReset,
+  });
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late _SortOption _sort;
+  late RangeValues _price;
+
+  @override
+  void initState() {
+    super.initState();
+    _sort = widget.sortOption;
+    _price = widget.priceRange;
+  }
+
+  String _formatPrice(double value) {
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(value % 1000000 == 0 ? 0 : 1)}tr';
+    }
+    return '${(value / 1000).round()}k';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.viewInsetsOf(context).bottom;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomPadding),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Lọc & Sắp xếp',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.onSurface,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: widget.onReset,
+                  child: const Text(
+                    'Đặt lại',
+                    style: TextStyle(color: AppTheme.outline),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 4),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+
+            // Sort
+            const Text(
+              'Sắp xếp theo',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _SortChip(
+                  label: 'Mới nhất',
+                  icon: Icons.fiber_new_outlined,
+                  selected: _sort == _SortOption.newest,
+                  onTap: () => setState(() => _sort = _SortOption.newest),
+                ),
+                _SortChip(
+                  label: 'Giá tăng dần',
+                  icon: Icons.arrow_upward,
+                  selected: _sort == _SortOption.priceAsc,
+                  onTap: () => setState(() => _sort = _SortOption.priceAsc),
+                ),
+                _SortChip(
+                  label: 'Giá giảm dần',
+                  icon: Icons.arrow_downward,
+                  selected: _sort == _SortOption.priceDesc,
+                  onTap: () => setState(() => _sort = _SortOption.priceDesc),
+                ),
+                _SortChip(
+                  label: 'Đánh giá cao',
+                  icon: Icons.star_outline,
+                  selected: _sort == _SortOption.ratingDesc,
+                  onTap: () => setState(() => _sort = _SortOption.ratingDesc),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+
+            // Price range
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Khoảng giá',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.onSurface,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${_formatPrice(_price.start)} – ${_formatPrice(_price.end)}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            RangeSlider(
+              values: _price,
+              min: 0,
+              max: widget.maxPrice,
+              divisions: 50,
+              activeColor: AppTheme.primary,
+              inactiveColor: AppTheme.outlineVariant,
+              onChanged: (values) => setState(() => _price = values),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '0đ',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.outline,
+                    ),
+                  ),
+                  Text(
+                    '5.000.000đ',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.outline,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Apply button
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: FilledButton(
+                onPressed: () => widget.onApply(_sort, _price),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Áp dụng',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SortChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SortChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.primaryContainer : AppTheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppTheme.primary : AppTheme.outlineVariant,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: selected ? AppTheme.onPrimaryContainer : AppTheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: selected ? AppTheme.onPrimaryContainer : AppTheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -12,7 +12,7 @@ class OrderDetailScreen extends StatefulWidget {
   final ValueChanged<ShopOrder> onReorder;
   final ValueChanged<ShopOrder>? onOrderUpdated;
   final List<ProductReview> reviews;
-  final ValueChanged<ProductReview>? onReviewSubmitted;
+  final Future<void> Function(ProductReview)? onReviewSubmitted;
 
   const OrderDetailScreen({
     super.key,

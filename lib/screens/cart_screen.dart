@@ -12,7 +12,7 @@ class CartScreen extends StatefulWidget {
   final List<CartItem> cartItems;
   final ValueChanged<String> onRemoveItem;
   final void Function(String key, int quantity) onUpdateQuantity;
-  final ValueChanged<ShopOrder> onOrderConfirmed;
+  final Future<bool> Function(ShopOrder order) onOrderConfirmed;
   final VoidCallback onGoHome;
   final VoidCallback onViewOrders;
 
@@ -32,17 +32,69 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
+  final Set<String> selectedKeys = {};
+  final Set<String> knownKeys = {};
+
   List<CartItem> get cartItems => widget.cartItems;
+  List<CartItem> get selectedItems =>
+      cartItems.where((item) => selectedKeys.contains(item.key)).toList();
+  bool get allSelected =>
+      cartItems.isNotEmpty && selectedKeys.length == cartItems.length;
+
+  @override
+  void initState() {
+    super.initState();
+    final keys = cartItems.map((item) => item.key);
+    knownKeys.addAll(keys);
+    selectedKeys.addAll(keys);
+  }
+
+  @override
+  void didUpdateWidget(covariant CartScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final currentKeys = cartItems.map((item) => item.key).toSet();
+    final newKeys = currentKeys.difference(knownKeys);
+    selectedKeys
+      ..removeWhere((key) => !currentKeys.contains(key))
+      ..addAll(newKeys);
+    knownKeys
+      ..clear()
+      ..addAll(currentKeys);
+  }
 
   String formatPrice(int price) {
     return '${price.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (match) => '${match[1]}.')}đ';
   }
 
   int get totalPrice {
-    return cartItems.fold(0, (sum, item) => sum + (item.price * item.quantity));
+    return selectedItems.fold(
+      0,
+      (sum, item) => sum + (item.price * item.quantity),
+    );
+  }
+
+  void _toggleAll(bool? selected) {
+    setState(() {
+      if (selected == true) {
+        selectedKeys.addAll(cartItems.map((item) => item.key));
+      } else {
+        selectedKeys.clear();
+      }
+    });
+  }
+
+  void _toggleItem(String key, bool? selected) {
+    setState(() {
+      if (selected == true) {
+        selectedKeys.add(key);
+      } else {
+        selectedKeys.remove(key);
+      }
+    });
   }
 
   void _removeItem(String key) {
+    setState(() => selectedKeys.remove(key));
     widget.onRemoveItem(key);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -62,10 +114,10 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _checkout() {
-    if (cartItems.isEmpty) {
+    if (selectedItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Giỏ hàng trống'),
+          content: Text('Vui lòng chọn ít nhất một sản phẩm để thanh toán'),
           duration: Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
         ),
@@ -81,7 +133,7 @@ class _CartScreenState extends State<CartScreen> {
           onOrderConfirmed: widget.onOrderConfirmed,
           onGoHome: widget.onGoHome,
           onViewOrders: widget.onViewOrders,
-          items: cartItems
+          items: selectedItems
               .map(
                 (item) => OrderItem(
                   id: item.id,
@@ -125,6 +177,39 @@ class _CartScreenState extends State<CartScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
                     child: Column(
                       children: [
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 14),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            children: [
+                              Checkbox(
+                                value: allSelected,
+                                onChanged: _toggleAll,
+                                activeColor: AppTheme.primary,
+                              ),
+                              const Expanded(
+                                child: Text(
+                                  'Chọn tất cả',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              Text(
+                                '${selectedItems.length}/${cartItems.length} sản phẩm',
+                                style: const TextStyle(
+                                  color: AppTheme.onSurfaceVariant,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         // Cart items
                         ListView.separated(
                           shrinkWrap: true,
@@ -171,7 +256,9 @@ class _CartScreenState extends State<CartScreen> {
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton(
-                                  onPressed: _checkout,
+                                  onPressed: selectedItems.isEmpty
+                                      ? null
+                                      : _checkout,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppTheme.primaryContainer,
                                     foregroundColor:
@@ -183,9 +270,9 @@ class _CartScreenState extends State<CartScreen> {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  child: const Text(
-                                    'Thanh toán',
-                                    style: TextStyle(
+                                  child: Text(
+                                    'Thanh toán (${selectedItems.length})',
+                                    style: const TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -220,6 +307,12 @@ class _CartScreenState extends State<CartScreen> {
       ),
       child: Row(
         children: [
+          Checkbox(
+            value: selectedKeys.contains(item.key),
+            onChanged: (value) => _toggleItem(item.key, value),
+            activeColor: AppTheme.primary,
+            visualDensity: VisualDensity.compact,
+          ),
           // Product image
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
@@ -241,7 +334,7 @@ class _CartScreenState extends State<CartScreen> {
               },
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 10),
 
           // Product details
           Expanded(
@@ -281,6 +374,17 @@ class _CartScreenState extends State<CartScreen> {
                 ),
 
                 const SizedBox(height: 8),
+
+                if (item.size != null && item.size!.isNotEmpty) ...[
+                  Text(
+                    'Size: ${item.size}',
+                    style: const TextStyle(
+                      color: AppTheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
 
                 // Price and quantity
                 Row(

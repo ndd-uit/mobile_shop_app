@@ -9,7 +9,7 @@ import 'order_success_screen.dart';
 class CheckoutScreen extends StatefulWidget {
   final CustomerProfile customerProfile;
   final List<OrderItem> items;
-  final ValueChanged<ShopOrder> onOrderConfirmed;
+  final Future<bool> Function(ShopOrder order) onOrderConfirmed;
   final VoidCallback onGoHome;
   final VoidCallback onViewOrders;
 
@@ -120,7 +120,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
   }
 
-  void _confirmOrder() {
+  Future<void> _confirmOrder() async {
     if (fullNameController.text.isEmpty ||
         phoneController.text.isEmpty ||
         addressController.text.isEmpty) {
@@ -151,7 +151,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ? 'Thanh toán khi nhận hàng (COD)'
           : 'Chuyển khoản ngân hàng',
     );
-    widget.onOrderConfirmed(order);
+    final saved = await widget.onOrderConfirmed(order);
+    if (!mounted) return;
+    if (!saved) {
+      setState(() => orderConfirmed = false);
+      return;
+    }
 
     Navigator.pushReplacement(
       context,

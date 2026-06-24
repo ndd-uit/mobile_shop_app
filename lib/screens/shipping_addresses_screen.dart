@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/customer_profile.dart';
 import '../models/shipping_address.dart';
+import '../services/auth_service.dart';
+import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
 
 class ShippingAddressesScreen extends StatefulWidget {
@@ -57,25 +59,59 @@ class _ShippingAddressesScreenState extends State<ShippingAddressesScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) => _AddressFormWidget(existing: existing),
-    ).then((newAddress) {
-      if (newAddress != null && mounted) {
-        final addresses = [...profile.addresses];
-        final index = addresses.indexWhere((item) => item.id == newAddress.id);
-        if (index == -1) {
-          addresses.add(newAddress);
+    ).then((newAddress) async {
+      if (newAddress == null || !mounted) return;
+
+      final uid = AuthService.currentUserId;
+      if (uid == null) return;
+
+      try {
+        final isNew = existing == null;
+        if (isNew) {
+          // Thêm mới vào DB, lấy lại address với id đã tạo
+          final saved = await ProfileService.addAddress(
+            uid: uid,
+            label: newAddress.label,
+            address: newAddress.address,
+          );
+          final addresses = [...profile.addresses, saved];
+          final defaultId = profile.defaultAddressId ?? saved.id;
+          updateProfile(withAddresses(addresses, defaultId));
         } else {
-          addresses[index] = newAddress;
+          // Cập nhật DB
+          await ProfileService.updateAddress(newAddress);
+          final addresses = [...profile.addresses];
+          final index = addresses.indexWhere((a) => a.id == newAddress.id);
+          if (index != -1) addresses[index] = newAddress;
+          updateProfile(withAddresses(addresses, profile.defaultAddressId));
         }
-        updateProfile(
-          withAddresses(addresses, profile.defaultAddressId ?? newAddress.id),
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không thể lưu địa chỉ. Vui lòng thử lại.'),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     });
   }
 
-  void deleteAddress(ShippingAddress address) {
+  Future<void> deleteAddress(ShippingAddress address) async {
+    try {
+      await ProfileService.deleteAddress(address.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể xóa địa chỉ. Vui lòng thử lại.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     final addresses = profile.addresses
-        .where((item) => item.id != address.id)
+        .where((a) => a.id != address.id)
         .toList();
     final defaultId = profile.defaultAddressId == address.id
         ? (addresses.isEmpty ? null : addresses.first.id)
@@ -83,8 +119,22 @@ class _ShippingAddressesScreenState extends State<ShippingAddressesScreen> {
     updateProfile(withAddresses(addresses, defaultId));
   }
 
-  void setDefaultAddress(ShippingAddress address) {
-    updateProfile(withAddresses(profile.addresses, address.id));
+  Future<void> setDefaultAddress(ShippingAddress address) async {
+    final updated = withAddresses(profile.addresses, address.id);
+    updateProfile(updated);
+    try {
+      await ProfileService.save(updated);
+    } catch (e) {
+      // rollback
+      if (!mounted) return;
+      updateProfile(profile);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể cập nhật địa chỉ mặc định.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override

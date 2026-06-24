@@ -1,15 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-import '../data/mock_orders.dart';
-import '../data/mock_products.dart';
 import '../models/cart_item.dart';
 import '../models/customer_profile.dart';
 import '../models/product.dart';
 import '../models/product_review.dart';
 import '../models/shop_order.dart';
 import '../theme/app_theme.dart';
+import '../services/auth_service.dart';
+import '../services/cart_service.dart';
+import '../services/favorite_service.dart';
+import '../services/order_service.dart';
+import '../services/product_service.dart';
+import '../services/profile_service.dart';
+import '../services/review_service.dart';
 import 'account_screen.dart';
 import 'cart_screen.dart';
+import 'change_password_screen.dart';
 import 'category_screen.dart';
 import 'edit_profile_screen.dart';
 import 'home_screen.dart';
@@ -18,7 +26,15 @@ import 'order_history_screen.dart';
 import 'shipping_addresses_screen.dart';
 import 'settings_screen.dart';
 
-enum _AccountPage { root, orders, editProfile, addresses, settings, favorites }
+enum _AccountPage {
+  root,
+  orders,
+  editProfile,
+  addresses,
+  settings,
+  favorites,
+  changePassword,
+}
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -31,13 +47,68 @@ class _MainScreenState extends State<MainScreen> {
   int selectedIndex = 0;
   _AccountPage accountPage = _AccountPage.root;
   final List<CartItem> cartItems = [];
-  final List<ShopOrder> orders = createMockOrders();
+  final List<ShopOrder> orders = [];
   final Set<String> favoriteProductIds = {};
   final List<ProductReview> productReviews = [];
+  List<Product> products = const [];
   CustomerProfile customerProfile = const CustomerProfile(
-    name: 'Nguyễn Thu Thảo',
-    phoneNumber: '0901234567',
+    name: '',
+    phoneNumber: '',
   );
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDatabaseData();
+  }
+
+  Future<void> _loadDatabaseData() async {
+    try {
+      final results = await Future.wait([
+        ProductService.fetchAll(),
+        ProfileService.fetchCurrent(),
+        CartService.fetchAll(),
+        OrderService.fetchAll(),
+        FavoriteService.fetchIds(),
+        ReviewService.fetchByUser(),
+      ]);
+      if (!mounted) return;
+      final dbProducts = results[0] as List<Product>;
+      final dbProfile = results[1] as CustomerProfile?;
+      final dbCart = results[2] as List<CartItem>;
+      final dbOrders = results[3] as List<ShopOrder>;
+      final dbFavorites = results[4] as Set<String>;
+      final dbReviews = results[5] as List<ProductReview>;
+
+      setState(() {
+        if (dbProducts.isNotEmpty) products = dbProducts;
+        if (dbProfile != null) customerProfile = dbProfile;
+        cartItems
+          ..clear()
+          ..addAll(dbCart);
+        orders
+          ..clear()
+          ..addAll(dbOrders);
+        favoriteProductIds
+          ..clear()
+          ..addAll(dbFavorites);
+        productReviews
+          ..clear()
+          ..addAll(dbReviews);
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể tải dữ liệu. Vui lòng kiểm tra kết nối.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
 
   void changeTab(int index) {
     setState(() {
@@ -51,7 +122,6 @@ class _MainScreenState extends State<MainScreen> {
       final index = cartItems.indexWhere(
         (item) => item.id == product.id && item.size == size,
       );
-
       if (index == -1) {
         cartItems.add(
           CartItem(
@@ -67,11 +137,17 @@ class _MainScreenState extends State<MainScreen> {
         cartItems[index].quantity++;
       }
     });
+    // fire-and-forget — cart lỗi không block UI, nhưng log ra
+    CartService.addOrIncrement(product, size).catchError((e) {
+      debugPrint('CartService.addOrIncrement error: $e');
+    });
   }
 
   void removeCartItem(String key) {
-    setState(() {
-      cartItems.removeWhere((item) => item.key == key);
+    final item = cartItems.firstWhere((i) => i.key == key);
+    setState(() => cartItems.removeWhere((i) => i.key == key));
+    CartService.remove(item.id, item.size ?? '').catchError((e) {
+      debugPrint('CartService.remove error: $e');
     });
   }
 
@@ -80,20 +156,56 @@ class _MainScreenState extends State<MainScreen> {
       removeCartItem(key);
       return;
     }
-
     setState(() {
       final index = cartItems.indexWhere((item) => item.key == key);
       if (index != -1) {
-        cartItems[index].quantity = quantity;
+        final item = cartItems[index];
+        item.quantity = quantity;
+        CartService.updateQuantity(
+          item.id,
+          item.size ?? '',
+          quantity,
+        ).catchError((e) => debugPrint('CartService.updateQuantity: $e'));
       }
     });
   }
 
-  void addOrder(ShopOrder order, {bool clearCart = false}) {
+  /// Đặt hàng — await DB để đảm bảo dữ liệu được lưu trước khi báo thành công.
+  Future<bool> addOrder(ShopOrder order, {bool clearCart = false}) async {
+    try {
+      await OrderService.create(order);
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đặt hàng thất bại. Vui lòng thử lại.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return false;
+    }
+    if (clearCart) {
+      try {
+        await CartService.clearAll();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Đơn đã được tạo nhưng chưa thể làm trống giỏ hàng.',
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    }
     setState(() {
       orders.insert(0, order);
       if (clearCart) cartItems.clear();
     });
+    return true;
   }
 
   void goHome() => setState(() => selectedIndex = 0);
@@ -117,34 +229,88 @@ class _MainScreenState extends State<MainScreen> {
     setState(() => accountPage = _AccountPage.settings);
   }
 
+  void goToChangePassword() {
+    setState(() => accountPage = _AccountPage.changePassword);
+  }
+
   void goToFavorites() {
     setState(() => accountPage = _AccountPage.favorites);
   }
 
   void toggleFavorite(Product product) {
+    final wasFavorite = favoriteProductIds.contains(product.id);
     setState(() {
-      if (!favoriteProductIds.add(product.id)) {
+      if (wasFavorite) {
         favoriteProductIds.remove(product.id);
+      } else {
+        favoriteProductIds.add(product.id);
       }
     });
+    FavoriteService.toggle(
+      product.id,
+      wasFavorite,
+    ).catchError((e) => debugPrint('FavoriteService.toggle: $e'));
   }
 
-  void updateCustomerProfile(CustomerProfile profile) {
+  /// Profile + địa chỉ — await DB, rollback UI nếu lỗi.
+  Future<void> updateCustomerProfile(CustomerProfile profile) async {
+    final previous = customerProfile;
     setState(() => customerProfile = profile);
+    try {
+      await ProfileService.save(profile);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => customerProfile = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể lưu thông tin. Vui lòng thử lại.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
-  void updateOrder(ShopOrder updatedOrder) {
-    setState(() {
-      final index = orders.indexWhere((order) => order.id == updatedOrder.id);
-      if (index != -1) orders[index] = updatedOrder;
-    });
+  /// Cập nhật trạng thái đơn hàng — await DB.
+  Future<void> updateOrder(ShopOrder updatedOrder) async {
+    final index = orders.indexWhere((o) => o.id == updatedOrder.id);
+    final previous = index != -1 ? orders[index] : null;
+    if (index != -1) setState(() => orders[index] = updatedOrder);
+
+    try {
+      await OrderService.updateStatus(updatedOrder);
+    } catch (e) {
+      if (!mounted) return;
+      if (previous != null && index != -1) {
+        setState(() => orders[index] = previous);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể cập nhật đơn hàng. Vui lòng thử lại.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
-  void addProductReview(ProductReview review) {
-    setState(() => productReviews.add(review));
+  /// Gửi đánh giá — await DB.
+  Future<void> addProductReview(ProductReview review) async {
+    try {
+      await ReviewService.submit(review);
+      setState(() => productReviews.add(review));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể gửi đánh giá. Vui lòng thử lại.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
-  void logout() {
+  Future<void> logout() async {
+    await AuthService.logout();
+    if (!mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
   }
 
@@ -165,8 +331,29 @@ class _MainScreenState extends State<MainScreen> {
               size: orderItem.size,
             ),
           );
+          final product = products.firstWhere(
+            (p) => p.id == orderItem.id,
+            orElse: () => Product(
+              id: orderItem.id,
+              name: orderItem.name,
+              price: orderItem.unitPrice,
+              category: '',
+              imageUrl: orderItem.imageUrl ?? '',
+              description: '',
+              rating: 0,
+            ),
+          );
+          CartService.addOrIncrement(
+            product,
+            orderItem.size ?? '',
+          ).catchError((e) => debugPrint('reorder addOrIncrement: $e'));
         } else {
           cartItems[index].quantity += orderItem.quantity;
+          CartService.updateQuantity(
+            orderItem.id,
+            orderItem.size ?? '',
+            cartItems[index].quantity,
+          ).catchError((e) => debugPrint('reorder updateQuantity: $e'));
         }
       }
       selectedIndex = 2;
@@ -181,79 +368,91 @@ class _MainScreenState extends State<MainScreen> {
     );
 
     return Scaffold(
-      body: switch (selectedIndex) {
-        0 => HomeScreen(
-          customerProfile: customerProfile,
-          onAddToCart: addToCart,
-          onOrderConfirmed: addOrder,
-          onGoHome: goHome,
-          onViewOrders: goToOrderHistory,
-          favoriteProductIds: favoriteProductIds,
-          onToggleFavorite: toggleFavorite,
-        ),
-        1 => CategoryScreen(
-          customerProfile: customerProfile,
-          onAddToCart: addToCart,
-          onOrderConfirmed: addOrder,
-          onGoHome: goHome,
-          onViewOrders: goToOrderHistory,
-          favoriteProductIds: favoriteProductIds,
-          onToggleFavorite: toggleFavorite,
-        ),
-        2 => CartScreen(
-          customerProfile: customerProfile,
-          cartItems: cartItems,
-          onRemoveItem: removeCartItem,
-          onUpdateQuantity: updateCartQuantity,
-          onOrderConfirmed: (order) => addOrder(order, clearCart: true),
-          onGoHome: goHome,
-          onViewOrders: goToOrderHistory,
-        ),
-        _ => switch (accountPage) {
-          _AccountPage.orders => OrderHistoryScreen(
-            orders: orders,
-            onReorder: reorder,
-            onOrderUpdated: updateOrder,
-            reviews: productReviews,
-            onReviewSubmitted: addProductReview,
-            onBack: goToAccount,
-          ),
-          _AccountPage.editProfile => EditProfileScreen(
-            profile: customerProfile,
-            onProfileChanged: updateCustomerProfile,
-            onBack: goToAccount,
-          ),
-          _AccountPage.addresses => ShippingAddressesScreen(
-            profile: customerProfile,
-            onProfileChanged: updateCustomerProfile,
-            onBack: goToAccount,
-          ),
-          _AccountPage.settings => SettingsScreen(onBack: goToAccount),
-          _AccountPage.favorites => FavoriteProductsScreen(
-            products: mockProducts
-                .where((product) => favoriteProductIds.contains(product.id))
-                .toList(),
-            favoriteProductIds: favoriteProductIds,
-            onToggleFavorite: toggleFavorite,
-            onAddToCart: addToCart,
-            customerProfile: customerProfile,
-            onOrderConfirmed: addOrder,
-            onGoHome: goHome,
-            onViewOrders: goToOrderHistory,
-            onBack: goToAccount,
-          ),
-          _ => AccountScreen(
-            profile: customerProfile,
-            onProfileChanged: updateCustomerProfile,
-            onViewOrders: goToOrderHistory,
-            onEditProfile: goToEditProfile,
-            onManageAddresses: goToShippingAddresses,
-            onOpenSettings: goToSettings,
-            onViewFavorites: goToFavorites,
-            onLogout: logout,
-          ),
-        },
-      },
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : switch (selectedIndex) {
+              0 => HomeScreen(
+                customerProfile: customerProfile,
+                onAddToCart: addToCart,
+                onOrderConfirmed: addOrder,
+                onGoHome: goHome,
+                onViewOrders: goToOrderHistory,
+                favoriteProductIds: favoriteProductIds,
+                onToggleFavorite: toggleFavorite,
+                products: products,
+              ),
+              1 => CategoryScreen(
+                customerProfile: customerProfile,
+                onAddToCart: addToCart,
+                onOrderConfirmed: addOrder,
+                onGoHome: goHome,
+                onViewOrders: goToOrderHistory,
+                favoriteProductIds: favoriteProductIds,
+                onToggleFavorite: toggleFavorite,
+                products: products,
+              ),
+              2 => CartScreen(
+                customerProfile: customerProfile,
+                cartItems: cartItems,
+                onRemoveItem: removeCartItem,
+                onUpdateQuantity: updateCartQuantity,
+                onOrderConfirmed: (order) => addOrder(order, clearCart: true),
+                onGoHome: goHome,
+                onViewOrders: goToOrderHistory,
+              ),
+              _ => switch (accountPage) {
+                _AccountPage.orders => OrderHistoryScreen(
+                  orders: orders,
+                  onReorder: reorder,
+                  onOrderUpdated: updateOrder,
+                  reviews: productReviews,
+                  onReviewSubmitted: addProductReview,
+                  onBack: goToAccount,
+                ),
+                _AccountPage.editProfile => EditProfileScreen(
+                  profile: customerProfile,
+                  onProfileChanged: updateCustomerProfile,
+                  onBack: goToAccount,
+                ),
+                _AccountPage.addresses => ShippingAddressesScreen(
+                  profile: customerProfile,
+                  onProfileChanged: updateCustomerProfile,
+                  onBack: goToAccount,
+                ),
+                _AccountPage.settings => SettingsScreen(
+                  onBack: goToAccount,
+                  onChangePassword: goToChangePassword,
+                ),
+                _AccountPage.changePassword => ChangePasswordScreen(
+                  onBack: goToSettings,
+                ),
+                _AccountPage.favorites => FavoriteProductsScreen(
+                  products: products
+                      .where(
+                        (product) => favoriteProductIds.contains(product.id),
+                      )
+                      .toList(),
+                  favoriteProductIds: favoriteProductIds,
+                  onToggleFavorite: toggleFavorite,
+                  onAddToCart: addToCart,
+                  customerProfile: customerProfile,
+                  onOrderConfirmed: addOrder,
+                  onGoHome: goHome,
+                  onViewOrders: goToOrderHistory,
+                  onBack: goToAccount,
+                ),
+                _ => AccountScreen(
+                  profile: customerProfile,
+                  onProfileChanged: updateCustomerProfile,
+                  onViewOrders: goToOrderHistory,
+                  onEditProfile: goToEditProfile,
+                  onManageAddresses: goToShippingAddresses,
+                  onOpenSettings: goToSettings,
+                  onViewFavorites: goToFavorites,
+                  onLogout: logout,
+                ),
+              },
+            },
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: AppTheme.surface,

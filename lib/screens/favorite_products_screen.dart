@@ -4,6 +4,7 @@ import '../models/customer_profile.dart';
 import '../models/product.dart';
 import '../models/shop_order.dart';
 import '../theme/app_theme.dart';
+import '../widgets/size_selection_bottom_sheet.dart';
 import 'product_detail_screen.dart';
 
 class FavoriteProductsScreen extends StatefulWidget {
@@ -12,7 +13,7 @@ class FavoriteProductsScreen extends StatefulWidget {
   final ValueChanged<Product> onToggleFavorite;
   final void Function(Product product, String size) onAddToCart;
   final CustomerProfile customerProfile;
-  final ValueChanged<ShopOrder> onOrderConfirmed;
+  final Future<bool> Function(ShopOrder order) onOrderConfirmed;
   final VoidCallback onGoHome;
   final VoidCallback onViewOrders;
   final VoidCallback onBack;
@@ -36,6 +37,7 @@ class FavoriteProductsScreen extends StatefulWidget {
 
 class _FavoriteProductsScreenState extends State<FavoriteProductsScreen> {
   String selectedCategory = 'Tất cả';
+  final Set<String> selectedProductIds = {};
 
   List<Product> get visibleProducts {
     if (selectedCategory == 'Tất cả') return widget.products;
@@ -94,6 +96,84 @@ class _FavoriteProductsScreenState extends State<FavoriteProductsScreen> {
     );
   }
 
+  @override
+  void didUpdateWidget(covariant FavoriteProductsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final currentIds = widget.products.map((product) => product.id).toSet();
+    selectedProductIds.removeWhere((id) => !currentIds.contains(id));
+  }
+
+  bool get allVisibleSelected =>
+      visibleProducts.isNotEmpty &&
+      visibleProducts.every(
+        (product) => selectedProductIds.contains(product.id),
+      );
+
+  bool get someVisibleSelected =>
+      visibleProducts.any((product) => selectedProductIds.contains(product.id));
+
+  void _toggleAllVisible(bool? selected) {
+    setState(() {
+      final ids = visibleProducts.map((product) => product.id);
+      if (selected == true) {
+        selectedProductIds.addAll(ids);
+      } else {
+        selectedProductIds.removeAll(ids);
+      }
+    });
+  }
+
+  void _toggleProduct(String id, bool? selected) {
+    setState(() {
+      if (selected == true) {
+        selectedProductIds.add(id);
+      } else {
+        selectedProductIds.remove(id);
+      }
+    });
+  }
+
+  /// Thêm các sản phẩm đã chọn vào giỏ.
+  /// Nếu chỉ chọn 1 sản phẩm → hiện bottom sheet chọn size.
+  /// Nếu chọn nhiều → thêm với size mặc định 'M'.
+  void _addSelectedToCart() {
+    final selectedProducts = widget.products
+        .where((product) => selectedProductIds.contains(product.id))
+        .toList();
+
+    if (selectedProducts.length == 1) {
+      final product = selectedProducts.first;
+      showSizeSelectionBottomSheet(
+        context: context,
+        product: product,
+        onConfirm: (size) {
+          widget.onAddToCart(product, size);
+          setState(() => selectedProductIds.clear());
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đã thêm "${product.name}" (size $size) vào giỏ hàng'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+      );
+      return;
+    }
+
+    for (final product in selectedProducts) {
+      widget.onAddToCart(product, 'M');
+    }
+    setState(() => selectedProductIds.clear());
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Đã thêm ${selectedProducts.length} sản phẩm vào giỏ hàng',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void openProduct(Product product) {
     Navigator.push(
       context,
@@ -146,12 +226,31 @@ class _FavoriteProductsScreenState extends State<FavoriteProductsScreen> {
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                         sliver: SliverToBoxAdapter(
-                          child: Text(
-                            '${products.length} sản phẩm',
-                            style: const TextStyle(
-                              color: AppTheme.onSurfaceVariant,
-                              fontSize: 14,
-                            ),
+                          child: Row(
+                            children: [
+                              Checkbox(
+                                tristate: true,
+                                value: allVisibleSelected
+                                    ? true
+                                    : someVisibleSelected
+                                    ? null
+                                    : false,
+                                onChanged: _toggleAllVisible,
+                                activeColor: AppTheme.primary,
+                              ),
+                              const Text(
+                                'Chọn tất cả',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '${selectedProductIds.length} đã chọn',
+                                style: const TextStyle(
+                                  color: AppTheme.onSurfaceVariant,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -179,6 +278,11 @@ class _FavoriteProductsScreenState extends State<FavoriteProductsScreen> {
                               return _FavoriteCard(
                                 product: product,
                                 price: formatPrice(product.price),
+                                selected: selectedProductIds.contains(
+                                  product.id,
+                                ),
+                                onSelected: (value) =>
+                                    _toggleProduct(product.id, value),
                                 onTap: () => openProduct(product),
                                 onRemove: () =>
                                     widget.onToggleFavorite(product),
@@ -189,6 +293,37 @@ class _FavoriteProductsScreenState extends State<FavoriteProductsScreen> {
                     ],
                   ),
                 ),
+                if (widget.products.isNotEmpty)
+                  SafeArea(
+                    top: false,
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                      decoration: const BoxDecoration(
+                        color: AppTheme.surface,
+                        border: Border(
+                          top: BorderSide(color: AppTheme.outlineVariant),
+                        ),
+                      ),
+                      child: FilledButton.icon(
+                        onPressed: selectedProductIds.isEmpty
+                            ? null
+                            : _addSelectedToCart,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.add_shopping_cart),
+                        label: Text(
+                          'Thêm ${selectedProductIds.length} sản phẩm vào giỏ',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
     );
@@ -200,12 +335,16 @@ class _FavoriteCard extends StatelessWidget {
   final String price;
   final VoidCallback onTap;
   final VoidCallback onRemove;
+  final bool selected;
+  final ValueChanged<bool?> onSelected;
 
   const _FavoriteCard({
     required this.product,
     required this.price,
     required this.onTap,
     required this.onRemove,
+    required this.selected,
+    required this.onSelected,
   });
 
   @override
@@ -228,6 +367,21 @@ class _FavoriteCard extends StatelessWidget {
                     errorBuilder: (_, _, _) => Container(
                       color: AppTheme.surfaceContainer,
                       child: const Icon(Icons.image_not_supported_outlined),
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Material(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      shape: const CircleBorder(),
+                      child: Checkbox(
+                        value: selected,
+                        onChanged: onSelected,
+                        activeColor: AppTheme.primary,
+                        shape: const CircleBorder(),
+                        visualDensity: VisualDensity.compact,
+                      ),
                     ),
                   ),
                   Positioned(

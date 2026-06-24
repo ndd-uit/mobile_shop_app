@@ -3,15 +3,17 @@ import 'package:flutter/material.dart';
 import '../models/order_item.dart';
 import '../models/customer_profile.dart';
 import '../models/product.dart';
+import '../models/product_review.dart';
 import '../models/shop_order.dart';
 import '../theme/app_theme.dart';
+import '../services/review_service.dart';
 import 'checkout_screen.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final CustomerProfile customerProfile;
   final Product product;
   final void Function(Product product, String size) onAddToCart;
-  final ValueChanged<ShopOrder> onOrderConfirmed;
+  final Future<bool> Function(ShopOrder order) onOrderConfirmed;
   final VoidCallback onGoHome;
   final VoidCallback onViewOrders;
   final bool isFavorite;
@@ -180,6 +182,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int currentImageIndex = 0;
   late String selectedSize;
   late bool isFavorite;
+  List<ProductReview> _reviews = [];
+  bool _reviewsLoading = true;
 
   final List<String> sizes = ['S', 'M', 'L', 'XL'];
 
@@ -188,6 +192,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     super.initState();
     selectedSize = 'M';
     isFavorite = widget.isFavorite;
+    _loadReviews();
+  }
+
+  Future<void> _loadReviews() async {
+    try {
+      final reviews = await ReviewService.fetchByProduct(widget.product.id);
+      if (!mounted) return;
+      setState(() {
+        _reviews = reviews;
+        _reviewsLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _reviewsLoading = false);
+    }
   }
 
   String formatPrice(int price) {
@@ -484,20 +503,51 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Row(
                           children: [
-                            const Icon(
-                              Icons.star,
-                              size: 16,
-                              color: AppTheme.primary,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${widget.product.rating} (128 đánh giá)',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: AppTheme.onSurfaceVariant,
+                            if (_reviewsLoading) ...[
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Đang tải...',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ] else if (_reviews.isEmpty) ...[
+                              const Icon(
+                                Icons.star_border,
+                                size: 16,
+                                color: AppTheme.outline,
+                              ),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'Chưa có đánh giá',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppTheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ] else ...[
+                              _StarRow(
+                                rating: _reviews.fold(0.0, (s, r) => s + r.rating) /
+                                    _reviews.length,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${(_reviews.fold(0.0, (s, r) => s + r.rating) / _reviews.length).toStringAsFixed(1)} (${_reviews.length} đánh giá)',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppTheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -632,6 +682,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           ),
                         ],
                       ),
+
+                      const SizedBox(height: 32),
+
+                      // ── Reviews Section ──
+                      _buildReviewsSection(),
                     ],
                   ),
                 ),
@@ -807,6 +862,418 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildReviewsSection() {
+    final avgRating = _reviews.isEmpty
+        ? 0.0
+        : _reviews.fold(0.0, (sum, r) => sum + r.rating) / _reviews.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Header ──
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Đánh giá sản phẩm',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.onSurface,
+                ),
+              ),
+            ),
+            if (_reviews.isNotEmpty)
+              Row(
+                children: [
+                  _StarRow(rating: avgRating, size: 14),
+                  const SizedBox(width: 4),
+                  Text(
+                    avgRating.toStringAsFixed(1),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                  Text(
+                    ' (${_reviews.length})',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+        const SizedBox(height: 14),
+
+        // ── Content ──
+        if (_reviewsLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_reviews.isEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 28),
+            alignment: Alignment.center,
+            child: Column(
+              children: [
+                Icon(
+                  Icons.rate_review_outlined,
+                  size: 44,
+                  color: AppTheme.outlineVariant,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Chưa có đánh giá nào',
+                  style: TextStyle(
+                    color: AppTheme.onSurfaceVariant,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Hãy là người đầu tiên đánh giá sản phẩm này!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppTheme.outline,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Column(
+            children: _reviews.take(5).map((review) {
+              return _ReviewCard(review: review);
+            }).toList(),
+          ),
+
+        // ── Rating summary bar ──
+        if (_reviews.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _RatingSummaryBar(reviews: _reviews),
+        ],
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Star row widget (fill / half / empty)
+// ─────────────────────────────────────────────
+
+class _StarRow extends StatelessWidget {
+  final double rating;
+  final double size;
+
+  const _StarRow({required this.rating, this.size = 14});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        final full = i + 1;
+        IconData icon;
+        if (rating >= full) {
+          icon = Icons.star;
+        } else if (rating >= full - 0.5) {
+          icon = Icons.star_half;
+        } else {
+          icon = Icons.star_border;
+        }
+        return Icon(icon, size: size, color: AppTheme.primary);
+      }),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Review widgets
+// ─────────────────────────────────────────────
+
+class _ReviewCard extends StatelessWidget {
+  final ProductReview review;
+
+  const _ReviewCard({required this.review});
+
+  String _timeAgo(DateTime date) {
+    final diff = DateTime.now().difference(date);
+    if (diff.inDays >= 365) return '${(diff.inDays / 365).floor()} năm trước';
+    if (diff.inDays >= 30) return '${(diff.inDays / 30).floor()} tháng trước';
+    if (diff.inDays >= 1) return '${diff.inDays} ngày trước';
+    if (diff.inHours >= 1) return '${diff.inHours} giờ trước';
+    return 'Vừa xong';
+  }
+
+  void _showImageFullscreen(BuildContext context, List<String> urls, int initial) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _ImageViewer(urls: urls, initialIndex: initial),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Avatar
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: AppTheme.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  (review.reviewerName?.isNotEmpty == true)
+                      ? review.reviewerName![0].toUpperCase()
+                      : '?',
+                  style: const TextStyle(
+                    color: AppTheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      review.reviewerName ?? 'Người dùng ẩn danh',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.onSurface,
+                      ),
+                    ),
+                    Text(
+                      _timeAgo(review.createdAt),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Stars
+              _StarRow(rating: review.rating.toDouble(), size: 14),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            review.comment,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppTheme.onSurfaceVariant,
+              height: 1.45,
+            ),
+          ),
+          // ── Review images ──
+          if (review.imagePaths.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 80,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: review.imagePaths.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
+                  final url = review.imagePaths[i];
+                  return GestureDetector(
+                    onTap: () => _showImageFullscreen(context, review.imagePaths, i),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        url,
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 80,
+                          height: 80,
+                          color: AppTheme.surfaceContainerLow,
+                          child: const Icon(
+                            Icons.broken_image_outlined,
+                            color: AppTheme.outline,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RatingSummaryBar extends StatelessWidget {
+  final List<ProductReview> reviews;
+
+  const _RatingSummaryBar({required this.reviews});
+
+  @override
+  Widget build(BuildContext context) {
+    // Count per star level
+    final counts = List.generate(5, (i) {
+      return reviews.where((r) => r.rating == 5 - i).length;
+    });
+    final total = reviews.length;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: List.generate(5, (i) {
+          final star = 5 - i;
+          final count = counts[i];
+          final fraction = total == 0 ? 0.0 : count / total;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 12,
+                  child: Text(
+                    '$star',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.star, size: 12, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: fraction,
+                      minHeight: 6,
+                      backgroundColor: AppTheme.outlineVariant,
+                      valueColor: const AlwaysStoppedAnimation(AppTheme.primaryContainer),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 20,
+                  child: Text(
+                    '$count',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Fullscreen image viewer
+// ─────────────────────────────────────────────
+
+class _ImageViewer extends StatefulWidget {
+  final List<String> urls;
+  final int initialIndex;
+
+  const _ImageViewer({required this.urls, required this.initialIndex});
+
+  @override
+  State<_ImageViewer> createState() => _ImageViewerState();
+}
+
+class _ImageViewerState extends State<_ImageViewer> {
+  late final PageController _pageController;
+  late int _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(
+          '${_current + 1} / ${widget.urls.length}',
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+        ),
+        centerTitle: true,
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.urls.length,
+        onPageChanged: (i) => setState(() => _current = i),
+        itemBuilder: (context, i) {
+          return InteractiveViewer(
+            child: Center(
+              child: Image.network(
+                widget.urls[i],
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.broken_image_outlined,
+                  color: Colors.white54,
+                  size: 64,
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

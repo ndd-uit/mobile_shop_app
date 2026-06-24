@@ -5,6 +5,7 @@ class ProductReview {
   final String comment;
   final List<String> imagePaths;
   final DateTime createdAt;
+  final String? reviewerName;
 
   const ProductReview({
     required this.productId,
@@ -13,5 +14,6 @@ class ProductReview {
     required this.comment,
     required this.imagePaths,
     required this.createdAt,
+    this.reviewerName,
   });
 }

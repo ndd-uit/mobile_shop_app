@@ -10,7 +10,7 @@ import '../theme/app_theme.dart';
 class WriteReviewScreen extends StatefulWidget {
   final String orderId;
   final OrderItem item;
-  final ValueChanged<ProductReview> onSubmitted;
+  final Future<void> Function(ProductReview review) onSubmitted;
 
   const WriteReviewScreen({
     super.key,
@@ -67,16 +67,25 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
     }
 
     setState(() => submitting = true);
-    widget.onSubmitted(
-      ProductReview(
-        productId: widget.item.id,
-        orderId: widget.orderId,
-        rating: rating,
-        comment: comment,
-        imagePaths: List.unmodifiable(imagePaths),
-        createdAt: DateTime.now(),
-      ),
-    );
+
+    try {
+      await widget.onSubmitted(
+        ProductReview(
+          productId: widget.item.id,
+          orderId: widget.orderId,
+          rating: rating,
+          comment: comment,
+          imagePaths: List.unmodifiable(imagePaths),
+          createdAt: DateTime.now(),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => submitting = false);
+      showMessage('Gửi đánh giá thất bại. Vui lòng thử lại.');
+      return;
+    }
+
     if (!mounted) return;
     setState(() => submitting = false);
 

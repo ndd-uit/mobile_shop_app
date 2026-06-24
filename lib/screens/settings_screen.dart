@@ -4,8 +4,13 @@ import '../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   final VoidCallback onBack;
+  final VoidCallback onChangePassword;
 
-  const SettingsScreen({super.key, required this.onBack});
+  const SettingsScreen({
+    super.key,
+    required this.onBack,
+    required this.onChangePassword,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -24,19 +29,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         duration: const Duration(milliseconds: 1100),
       ),
     );
-  }
-
-  void showChangePasswordDialog() {
-    showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => _ChangePasswordDialog(
-        onMessage: showMessage,
-      ),
-    ).then((success) {
-      if (success == true) {
-        showMessage('Đã cập nhật mật khẩu');
-      }
-    });
   }
 
   @override
@@ -105,7 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsTile(
                 icon: Icons.lock_outline,
                 title: 'Đổi mật khẩu',
-                onTap: showChangePasswordDialog,
+                onTap: widget.onChangePassword,
               ),
               _SettingsSwitchTile(
                 icon: Icons.verified_user_outlined,
@@ -291,80 +283,6 @@ class _SettingsSwitchTile extends StatelessWidget {
       value: value,
       activeThumbColor: AppTheme.primary,
       onChanged: onChanged,
-    );
-  }
-}
-
-class _ChangePasswordDialog extends StatefulWidget {
-  final ValueChanged<String> onMessage;
-
-  const _ChangePasswordDialog({required this.onMessage});
-
-  @override
-  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
-}
-
-class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
-  late TextEditingController currentPassword;
-  late TextEditingController newPassword;
-
-  @override
-  void initState() {
-    super.initState();
-    currentPassword = TextEditingController();
-    newPassword = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    currentPassword.dispose();
-    newPassword.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Đổi mật khẩu'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: currentPassword,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Mật khẩu hiện tại',
-              prefixIcon: Icon(Icons.lock_outline),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: newPassword,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Mật khẩu mới',
-              prefixIcon: Icon(Icons.password),
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Hủy'),
-        ),
-        FilledButton(
-          onPressed: () {
-            if (currentPassword.text.isEmpty || newPassword.text.length < 6) {
-              widget.onMessage('Mật khẩu mới cần ít nhất 6 ký tự');
-              return;
-            }
-            FocusScope.of(context).unfocus();
-            Navigator.pop(context, true);
-          },
-          child: const Text('Cập nhật'),
-        ),
-      ],
     );
   }
 }
