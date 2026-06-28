@@ -483,7 +483,11 @@ class _ProductCard extends StatelessWidget {
   });
 
   bool get isNew => product.id == 'p02';
-  bool get isDiscount => product.id == 'p04';
+  bool get isDiscount => product.oldPrice != null;
+
+  String _formatPrice(int price) {
+    return '${price.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (match) => '${match[1]}.')}đ';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -569,21 +573,29 @@ class _ProductCard extends StatelessWidget {
           if (isDiscount)
             Row(
               children: [
-                Text(
-                  priceText,
-                  style: const TextStyle(
-                    color: Color(0xFF81515B),
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
+                Flexible(
+                  child: Text(
+                    priceText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF81515B),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  '450.000đ',
-                  style: TextStyle(
+                Flexible(
+                  child: Text(
+                    _formatPrice(product.oldPrice!),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
                     color: Color(0xFF837375),
                     fontSize: 12,
                     decoration: TextDecoration.lineThrough,
+                    ),
                   ),
                 ),
               ],

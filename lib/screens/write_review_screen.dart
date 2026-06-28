@@ -79,10 +79,11 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
           createdAt: DateTime.now(),
         ),
       );
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => submitting = false);
-      showMessage('Gửi đánh giá thất bại. Vui lòng thử lại.');
+      final message = e.toString().replaceFirst('Exception: ', '');
+      showMessage(message);
       return;
     }
 

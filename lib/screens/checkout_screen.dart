@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/order_item.dart';
 import '../models/customer_profile.dart';
 import '../models/shop_order.dart';
+import '../services/voucher_service.dart';
 import '../theme/app_theme.dart';
 import 'order_success_screen.dart';
 
@@ -37,6 +38,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int discount = 0;
   String? appliedVoucherCode;
   bool orderConfirmed = false;
+  bool applyingVoucher = false;
   bool useSavedCustomerInfo = false;
   String manualName = '';
   String manualPhone = '';
@@ -63,28 +65,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   int get totalWithShipping => subtotal + shippingFee - discount;
 
-  void applyVoucher() {
+  Future<void> applyVoucher() async {
     FocusScope.of(context).unfocus();
     final code = voucherController.text.trim().toUpperCase();
-    int newDiscount;
-    switch (code) {
-      case 'DAISY10':
-        newDiscount = (subtotal * 0.1).round().clamp(0, 100000);
-      case 'FREESHIP':
-        newDiscount = shippingFee;
-      default:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Mã giảm giá không hợp lệ hoặc đã hết hạn'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return;
+    setState(() => applyingVoucher = true);
+    late final VoucherResult voucher;
+    try {
+      voucher = await VoucherService.validate(
+        code: code,
+        subtotal: subtotal,
+        shippingFee: shippingFee,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => applyingVoucher = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
     }
+    if (!mounted) return;
     setState(() {
-      discount = newDiscount;
-      appliedVoucherCode = code;
-      voucherController.text = code;
+      discount = voucher.discount;
+      appliedVoucherCode = voucher.code;
+      voucherController.text = voucher.code;
+      applyingVoucher = false;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -139,7 +147,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final order = ShopOrder(
       id: 'DS$orderNumber',
       orderedAt: now,
-      status: OrderStatus.delivering,
+      status: selectedPaymentMethod == 'bank_transfer'
+          ? OrderStatus.pendingPayment
+          : OrderStatus.pendingConfirmation,
       items: List.unmodifiable(widget.items),
       shippingFee: shippingFee,
       discount: discount,
@@ -535,7 +545,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 controller: voucherController,
                 enabled: appliedVoucherCode == null,
                 textCapitalization: TextCapitalization.characters,
-                onSubmitted: (_) => applyVoucher(),
+              onSubmitted: (_) => applyVoucher(),
                 decoration: InputDecoration(
                   hintText: 'Nhập mã giảm giá',
                   prefixIcon: const Icon(Icons.confirmation_number_outlined),
@@ -550,19 +560,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
             const SizedBox(width: 10),
             FilledButton(
-              onPressed: appliedVoucherCode == null ? applyVoucher : null,
+              onPressed:
+                  appliedVoucherCode == null && !applyingVoucher ? applyVoucher : null,
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.secondary,
                 foregroundColor: AppTheme.onSecondary,
                 minimumSize: const Size(92, 48),
               ),
-              child: const Text('Áp dụng'),
+              child: Text(applyingVoucher ? 'Đang...' : 'Áp dụng'),
             ),
           ],
         ),
         const SizedBox(height: 8),
         const Text(
-          'Mã thử nghiệm: DAISY10 hoặc FREESHIP',
+          'Nhập mã được shop phát hành',
           style: TextStyle(color: AppTheme.outline, fontSize: 12),
         ),
       ],

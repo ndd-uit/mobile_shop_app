@@ -184,8 +184,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   late bool isFavorite;
   List<ProductReview> _reviews = [];
   bool _reviewsLoading = true;
+  bool _reviewsLoadFailed = false;
 
   final List<String> sizes = ['S', 'M', 'L', 'XL'];
+
+  List<String> get _productImages {
+    final urls = widget.product.imageUrls
+        .where((url) => url.trim().isNotEmpty)
+        .toList();
+    if (urls.isNotEmpty) return urls;
+    return widget.product.imageUrl.trim().isEmpty
+        ? const []
+        : [widget.product.imageUrl];
+  }
 
   @override
   void initState() {
@@ -196,16 +207,24 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _loadReviews() async {
+    setState(() {
+      _reviewsLoading = true;
+      _reviewsLoadFailed = false;
+    });
     try {
       final reviews = await ReviewService.fetchByProduct(widget.product.id);
       if (!mounted) return;
       setState(() {
         _reviews = reviews;
         _reviewsLoading = false;
+        _reviewsLoadFailed = false;
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _reviewsLoading = false);
+      setState(() {
+        _reviewsLoading = false;
+        _reviewsLoadFailed = true;
+      });
     }
   }
 
@@ -219,6 +238,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         content: Text(message),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showProductImageViewer(List<String> urls, int initial) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _ImageViewer(urls: urls, initialIndex: initial),
       ),
     );
   }
@@ -350,6 +378,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final productImages = _productImages;
+
     return Scaffold(
       backgroundColor: AppTheme.surface,
       body: Stack(
@@ -388,45 +418,69 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.network(
-                          widget.product.imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) {
-                            return Container(
-                              color: AppTheme.surfaceContainerLow,
-                              child: const Icon(
-                                Icons.image_not_supported_outlined,
-                                size: 64,
-                                color: AppTheme.onSurfaceVariant,
-                              ),
-                            );
-                          },
-                        ),
-                        // Carousel indicators
-                        Positioned(
-                          bottom: 16,
-                          left: 0,
-                          right: 0,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(
-                              3,
-                              (index) => Container(
-                                width: 8,
-                                height: 8,
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 4,
+                        if (productImages.isEmpty)
+                          const Center(
+                            child: Icon(
+                              Icons.image_not_supported_outlined,
+                              size: 64,
+                              color: AppTheme.onSurfaceVariant,
+                            ),
+                          )
+                        else
+                          PageView.builder(
+                            itemCount: productImages.length,
+                            onPageChanged: (index) {
+                              setState(() => currentImageIndex = index);
+                            },
+                            itemBuilder: (context, index) {
+                              return GestureDetector(
+                                onTap: () => _showProductImageViewer(
+                                  productImages,
+                                  index,
                                 ),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: index == currentImageIndex
-                                      ? AppTheme.primary
-                                      : AppTheme.surfaceContainerHighest,
+                                child: Image.network(
+                                  productImages[index],
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) {
+                                    return Container(
+                                      color: AppTheme.surfaceContainerLow,
+                                      child: const Icon(
+                                        Icons.image_not_supported_outlined,
+                                        size: 64,
+                                        color: AppTheme.onSurfaceVariant,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                            },
+                          ),
+                        // Carousel indicators
+                        if (productImages.length > 1)
+                          Positioned(
+                            bottom: 16,
+                            left: 0,
+                            right: 0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(
+                                productImages.length,
+                                (index) => Container(
+                                  width: 8,
+                                  height: 8,
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: index == currentImageIndex
+                                        ? AppTheme.primary
+                                        : AppTheme.surfaceContainerHighest,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -514,6 +568,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 'Đang tải...',
                                 style: TextStyle(
                                   fontSize: 12,
+                                  color: AppTheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ] else if (_reviewsLoadFailed) ...[
+                              const Icon(
+                                Icons.error_outline,
+                                size: 16,
+                                color: AppTheme.outline,
+                              ),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'Không tải được đánh giá',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
                                   color: AppTheme.onSurfaceVariant,
                                 ),
                               ),
@@ -655,31 +724,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          Text(
-                            widget.product.description,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w400,
-                              color: AppTheme.onSurfaceVariant,
-                              height: 1.5,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildBulletPoint(
-                                'Chất liệu: Lụa tơ tằm tổng hợp mềm mát',
-                              ),
-                              _buildBulletPoint(
-                                'Kiểu dáng: Váy xòe nhẹ, cổ chữ V tinh tế',
-                              ),
-                              _buildBulletPoint('Màu sắc: Hồng pastel'),
-                              _buildBulletPoint(
-                                'Bảo quản: Giặt tay nhẹ nhàng, tránh ánh nắng gắt',
-                              ),
-                            ],
-                          ),
+                          _buildDescriptionContent(),
                         ],
                       ),
 
@@ -866,6 +911,48 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
+  Widget _buildDescriptionContent() {
+    final description = widget.product.description.trim();
+    if (description.isEmpty) {
+      return const Text(
+        'Sản phẩm chưa có mô tả chi tiết.',
+        style: TextStyle(
+          fontSize: 14,
+          color: AppTheme.onSurfaceVariant,
+          height: 1.5,
+        ),
+      );
+    }
+
+    final lines = description
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+
+    if (lines.length <= 1) {
+      return Text(
+        description,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: AppTheme.onSurfaceVariant,
+          height: 1.5,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final line in lines)
+          _buildBulletPoint(
+            line.replaceFirst(RegExp(r'^[-•]\s*'), ''),
+          ),
+      ],
+    );
+  }
+
   Widget _buildReviewsSection() {
     final avgRating = _reviews.isEmpty
         ? 0.0
@@ -918,6 +1005,49 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_reviewsLoadFailed)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.outlineVariant),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 44,
+                  color: AppTheme.outlineVariant,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Không thể tải đánh giá',
+                  style: TextStyle(
+                    color: AppTheme.onSurfaceVariant,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Kiểm tra kết nối hoặc quyền đọc review trên Supabase.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppTheme.outline,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  onPressed: _loadReviews,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Thử lại'),
+                ),
+              ],
+            ),
           )
         else if (_reviews.isEmpty)
           Container(

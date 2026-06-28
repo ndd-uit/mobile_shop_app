@@ -5,6 +5,8 @@ class OrderItem {
   final String? imageUrl;
   final int quantity;
   final String? size;
+  final String? color;
+  final String? style;
 
   const OrderItem({
     required this.id,
@@ -13,6 +15,8 @@ class OrderItem {
     required this.quantity,
     this.imageUrl,
     this.size,
+    this.color,
+    this.style,
   });
 
   int get totalPrice => unitPrice * quantity;

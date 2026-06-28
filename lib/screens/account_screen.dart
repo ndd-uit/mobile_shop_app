@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -177,17 +178,7 @@ class _AccountScreenState extends State<AccountScreen> {
                   border: Border.all(color: AppTheme.surface, width: 4),
                 ),
                 child: ClipOval(
-                  child: widget.profile.avatarPath != null
-                      ? Image.file(
-                          File(widget.profile.avatarPath!),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _avatarFallback(),
-                        )
-                      : Image.network(
-                          'https://lh3.googleusercontent.com/aida-public/AB6AXuBR_6aGl0fFKnItnD2QxDSSyP74GeDlkD6ha5L9AvPM9NwAZU37mKY1Xnyj5XL969P9irgxAfqlWeCvn9OQ5Tq20fMxX3DNVs4zrO4Jcr6vXY3UeeF7uXErdSaerz6MhlobsM9N8BhCUjtw-6FVqHcYnz8mLgM_0SX9rxhZKfGPDa4UP5m-m1JgFsPWljvAl9mM345FFBQb9HJKG01pDewJDsb_CTmBFCgUak3lwx2Ij8AWUx4cDg82_vJ-idLEMp5Mvrlha1ETeEg',
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _avatarFallback(),
-                        ),
+                  child: _buildAvatarImage(),
                 ),
               ),
               Positioned(
@@ -251,6 +242,31 @@ class _AccountScreenState extends State<AccountScreen> {
     return Container(
       color: AppTheme.primaryFixed,
       child: const Icon(Icons.person, size: 52, color: AppTheme.primary),
+    );
+  }
+
+  Widget _buildAvatarImage() {
+    const fallbackAvatarUrl =
+        'https://lh3.googleusercontent.com/aida-public/AB6AXuBR_6aGl0fFKnItnD2QxDSSyP74GeDlkD6ha5L9AvPM9NwAZU37mKY1Xnyj5XL969P9irgxAfqlWeCvn9OQ5Tq20fMxX3DNVs4zrO4Jcr6vXY3UeeF7uXErdSaerz6MhlobsM9N8BhCUjtw-6FVqHcYnz8mLgM_0SX9rxhZKfGPDa4UP5m-m1JgFsPWljvAl9mM345FFBQb9HJKG01pDewJDsb_CTmBFCgUak3lwx2Ij8AWUx4cDg82_vJ-idLEMp5Mvrlha1ETeEg';
+    final avatarPath = widget.profile.avatarPath;
+    if (avatarPath == null || avatarPath.isEmpty) {
+      return Image.network(
+        fallbackAvatarUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _avatarFallback(),
+      );
+    }
+    if (kIsWeb || avatarPath.startsWith('http')) {
+      return Image.network(
+        avatarPath,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _avatarFallback(),
+      );
+    }
+    return Image.file(
+      File(avatarPath),
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => _avatarFallback(),
     );
   }
 }

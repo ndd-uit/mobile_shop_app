@@ -1,6 +1,15 @@
 import 'order_item.dart';
 
-enum OrderStatus { delivering, completed, cancelled, returnRequested, returned }
+enum OrderStatus {
+  pendingPayment,
+  pendingConfirmation,
+  preparing,
+  delivering,
+  completed,
+  cancelled,
+  returnRequested,
+  returned,
+}
 
 class ShopOrder {
   final String id;

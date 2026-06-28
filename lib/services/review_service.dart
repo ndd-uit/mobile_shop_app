@@ -66,20 +66,39 @@ class ReviewService {
     required List<String> localPaths,
   }) async {
     final urls = <String>[];
-    for (final path in localPaths) {
+    for (var i = 0; i < localPaths.length; i++) {
+      final path = localPaths[i];
       final file = File(path);
-      final ext = path.split('.').last.toLowerCase();
+      final ext = _extensionOf(path);
       final fileName =
-          '$uid/$productId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+          '$uid/$productId/${DateTime.now().microsecondsSinceEpoch}_$i.$ext';
       await supabase.storage.from(_bucket).upload(
         fileName,
         file,
-        fileOptions: FileOptions(contentType: 'image/$ext', upsert: false),
+        fileOptions: FileOptions(contentType: _contentType(ext), upsert: false),
       );
       final url = supabase.storage.from(_bucket).getPublicUrl(fileName);
       urls.add(url);
     }
     return urls;
+  }
+
+  static String _extensionOf(String path) {
+    final rawExt = path.split('.').last.toLowerCase();
+    return switch (rawExt) {
+      'jpeg' || 'jpg' => 'jpg',
+      'png' => 'png',
+      'webp' => 'webp',
+      _ => 'jpg',
+    };
+  }
+
+  static String _contentType(String ext) {
+    return switch (ext) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'image/jpeg',
+    };
   }
 
   /// Gửi đánh giá mới lên Supabase, upload ảnh lên Storage nếu có.
@@ -93,11 +112,17 @@ class ReviewService {
         .where((p) => !p.startsWith('http'))
         .toList();
     if (localPaths.isNotEmpty) {
-      imageUrls = await _uploadImages(
-        uid: uid,
-        productId: review.productId,
-        localPaths: localPaths,
-      );
+      try {
+        imageUrls = await _uploadImages(
+          uid: uid,
+          productId: review.productId,
+          localPaths: localPaths,
+        );
+      } catch (_) {
+        throw Exception(
+          'Không thể tải ảnh đánh giá. Vui lòng kiểm tra bucket $_bucket trên Supabase.',
+        );
+      }
     }
 
     await supabase.from('reviews').insert({
@@ -110,10 +135,15 @@ class ReviewService {
       'created_at': review.createdAt.toIso8601String(),
     });
 
-    // Cập nhật rating qua RPC (Security Definer) để tránh bị RLS block
-    await supabase.rpc('update_product_rating', params: {
-      'p_product_id': review.productId,
-    });
+    // Cập nhật rating là dữ liệu phụ. Nếu RPC chưa được deploy/permission lỗi,
+    // review vẫn phải được gửi thành công để không tạo cảm giác mất bài đánh giá.
+    try {
+      await supabase.rpc('update_product_rating', params: {
+        'p_product_id': review.productId,
+      });
+    } catch (_) {
+      // Rating trung bình có thể được cập nhật lại sau khi chạy schema.sql.
+    }
   }
 
   static ProductReview _rowToReview(Map<String, dynamic> row) {

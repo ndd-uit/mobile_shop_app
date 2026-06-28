@@ -21,6 +21,31 @@ class OrderService {
         .toList();
   }
 
+  /// Admin: lấy toàn bộ đơn hàng kèm order_items.
+  static Future<List<ShopOrder>> fetchAdminAll() async {
+    final rows = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .order('ordered_at', ascending: false);
+
+    return (rows as List)
+        .cast<Map<String, dynamic>>()
+        .map(_rowToOrder)
+        .toList();
+  }
+
+  /// Admin: lấy một đơn hàng theo id kèm order_items.
+  static Future<ShopOrder?> fetchAdminById(String id) async {
+    final row = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .eq('id', id)
+        .maybeSingle();
+
+    if (row == null) return null;
+    return _rowToOrder(row);
+  }
+
   /// Tạo đơn hàng + order_items trong một batch.
   /// Supabase không hỗ trợ client-side transaction nên insert theo thứ tự:
   /// nếu insert items thất bại, xóa order để tránh orphan.
@@ -56,10 +81,12 @@ class OrderService {
                     'product_id': item.id,
                     'product_name': item.name,
                     'unit_price': item.unitPrice,
-                    'quantity': item.quantity,
-                    'image_url': item.imageUrl,
-                    'size': item.size,
-                  })
+                  'quantity': item.quantity,
+                  'image_url': item.imageUrl,
+                  'size': item.size,
+                  if (item.color != null) 'color': item.color,
+                  if (item.style != null) 'style': item.style,
+                })
               .toList(),
         );
       } catch (e) {
@@ -80,6 +107,17 @@ class OrderService {
     }).eq('id', order.id);
   }
 
+  /// Admin: cập nhật nhanh trạng thái đơn hàng theo id.
+  static Future<void> updateAdminStatus({
+    required String id,
+    required OrderStatus status,
+  }) async {
+    await supabase.from('orders').update({
+      'status': _statusToString(status),
+      'status_updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
   // ─── helpers ──────────────────────────────────────────────────────────────
 
   static ShopOrder _rowToOrder(Map<String, dynamic> row) {
@@ -93,6 +131,8 @@ class OrderService {
               quantity: r['quantity'] as int,
               imageUrl: r['image_url'] as String?,
               size: r['size'] as String?,
+              color: r['color'] as String?,
+              style: r['style'] as String?,
             ))
         .toList();
 
@@ -117,6 +157,9 @@ class OrderService {
   }
 
   static String _statusToString(OrderStatus status) => switch (status) {
+        OrderStatus.pendingPayment => 'pending_payment',
+        OrderStatus.pendingConfirmation => 'pending_confirmation',
+        OrderStatus.preparing => 'preparing',
         OrderStatus.delivering => 'delivering',
         OrderStatus.completed => 'completed',
         OrderStatus.cancelled => 'cancelled',
@@ -125,6 +168,9 @@ class OrderService {
       };
 
   static OrderStatus _statusFromString(String s) => switch (s) {
+        'pending_payment' => OrderStatus.pendingPayment,
+        'pending_confirmation' => OrderStatus.pendingConfirmation,
+        'preparing' => OrderStatus.preparing,
         'delivering' => OrderStatus.delivering,
         'completed' => OrderStatus.completed,
         'cancelled' => OrderStatus.cancelled,

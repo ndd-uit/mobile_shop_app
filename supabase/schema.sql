@@ -268,6 +268,50 @@ revoke execute on function public.update_product_rating(text) from public, anon;
 grant execute on function public.update_product_rating(text) to authenticated;
 notify pgrst, 'reload schema';
 
+-- Storage: ảnh đánh giá sản phẩm.
+-- Cần chạy đoạn này để review có ảnh upload và hiển thị được trên các thiết bị.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'review-images',
+  'review-images',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "review images are publicly readable" on storage.objects;
+drop policy if exists "users upload own review images" on storage.objects;
+drop policy if exists "users update own review images" on storage.objects;
+drop policy if exists "users delete own review images" on storage.objects;
+
+create policy "review images are publicly readable" on storage.objects
+  for select using (bucket_id = 'review-images');
+
+create policy "users upload own review images" on storage.objects
+  for insert to authenticated with check (
+    bucket_id = 'review-images'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "users update own review images" on storage.objects
+  for update to authenticated using (
+    bucket_id = 'review-images'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  ) with check (
+    bucket_id = 'review-images'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "users delete own review images" on storage.objects
+  for delete to authenticated using (
+    bucket_id = 'review-images'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
 -- Backfill product images for databases created from an earlier schema version.
 update public.products set image_url = 'https://lh3.googleusercontent.com/aida-public/AB6AXuDIBBuFHwWpIkQAvs0CCkebq7Tk_6QTRLLOQol8oJiZbAggUXZ8FJ9YTBVHFUehuM1OxY2QEv518sZ3wIHqaHBRmvXJdd69qCHzzi1s1JRBTI15KCxX-VAsvTWHgtNjmOAyBPqffGWSMKCzJEbTMwGReSL8esOOSMdFF8YpLd9zAL54A_0yD0KjHP5i8fGJvjnHObwmUMHqvhiLKHL3frZ-8jZyMVnGvRPJ8JVQDUoe-YpdiLdQdZVLJcxFJbl2qHbH0MVED8ZCbOw' where id = 'p01' and image_url = '';
 update public.products set image_url = 'https://lh3.googleusercontent.com/aida-public/AB6AXuAv4c9a8iZW8rHyhcxDlzi8xYvxzeo-X1fVrGAgDeMqXNUUcAx2T-qsyVDgDiMgXL5HMnKm5hJyYlupGdwC8kXTox0y6Z37w5ShZsr-GVeK6hGgpXqG7zH1pQqeA3rvvpqCAwBsRKeTVt-JI_O_Rf3CoJ_dA4A35A5A2jh_CaJd6LRqhoqqSptQzDRQvZO1D5zxOjlfjL1_-uAvCkUTsCygr_FiyolMFcNR8cjdv-zZMkPokGdu-m4PIuwdxrHsCVcm9gIunO7pX7w' where id = 'p02' and image_url = '';

@@ -40,6 +40,11 @@ class AuthService {
     );
   }
 
+  static Future<void> sendPasswordResetForPhone(String phone) async {
+    final fakeEmail = '$phone@users.daisyshop.app';
+    await supabase.auth.resetPasswordForEmail(fakeEmail);
+  }
+
   /// Đăng xuất.
   static Future<void> logout() async {
     await supabase.auth.signOut();

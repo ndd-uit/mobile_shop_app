@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 
 enum _RecoveryStep { phone, otp, password, success }
@@ -28,6 +29,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   int resendSeconds = 0;
   bool obscurePassword = true;
   bool obscureConfirmation = true;
+  bool sending = false;
 
   @override
   void dispose() {
@@ -53,15 +55,27 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
   }
 
-  void sendOtp() {
+  Future<void> sendOtp() async {
     final phone = phoneController.text.trim();
     if (!RegExp(r'^0\d{9}$').hasMatch(phone)) {
       showMessage('Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0');
       return;
     }
-    setState(() => step = _RecoveryStep.otp);
-    startCountdown();
-    showMessage('Đã gửi mã OTP. Mã thử nghiệm: 123456');
+    setState(() => sending = true);
+    try {
+      await AuthService.sendPasswordResetForPhone(phone);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => sending = false);
+      showMessage('Không thể gửi yêu cầu đặt lại mật khẩu. Vui lòng thử lại.');
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      sending = false;
+      step = _RecoveryStep.success;
+    });
+    showMessage('Đã gửi yêu cầu đặt lại mật khẩu');
   }
 
   void verifyOtp() {
@@ -172,8 +186,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         key: const ValueKey('phone'),
         bannerUrl: _bannerUrl,
         controller: phoneController,
-        onContinue: sendOtp,
+        onContinue: sending ? null : sendOtp,
         onSupport: () => showMessage('Hotline hỗ trợ: 1900 1234'),
+        sending: sending,
       ),
       _RecoveryStep.otp => _OtpStep(
         key: const ValueKey('otp'),
@@ -208,8 +223,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 class _PhoneStep extends StatelessWidget {
   final String bannerUrl;
   final TextEditingController controller;
-  final VoidCallback onContinue;
+  final VoidCallback? onContinue;
   final VoidCallback onSupport;
+  final bool sending;
 
   const _PhoneStep({
     super.key,
@@ -217,6 +233,7 @@ class _PhoneStep extends StatelessWidget {
     required this.controller,
     required this.onContinue,
     required this.onSupport,
+    required this.sending,
   });
 
   @override
@@ -263,7 +280,7 @@ class _PhoneStep extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Vui lòng nhập số điện thoại để nhận mã xác thực OTP.',
+          'Vui lòng nhập số điện thoại đã đăng ký để nhận yêu cầu đặt lại mật khẩu.',
           style: TextStyle(color: AppTheme.onSurfaceVariant, height: 1.5),
         ),
         const SizedBox(height: 28),
@@ -281,7 +298,7 @@ class _PhoneStep extends StatelessWidget {
             FilteringTextInputFormatter.digitsOnly,
             LengthLimitingTextInputFormatter(10),
           ],
-          onSubmitted: (_) => onContinue(),
+          onSubmitted: (_) => onContinue?.call(),
           decoration: const InputDecoration(
             hintText: 'Nhập số điện thoại của bạn',
             prefixIcon: Icon(Icons.call_outlined),
@@ -291,8 +308,14 @@ class _PhoneStep extends StatelessWidget {
         FilledButton.icon(
           onPressed: onContinue,
           iconAlignment: IconAlignment.end,
-          icon: const Icon(Icons.arrow_forward),
-          label: const Text('Gửi mã OTP'),
+          icon: sending
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.arrow_forward),
+          label: Text(sending ? 'Đang gửi...' : 'Gửi yêu cầu'),
         ),
         const SizedBox(height: 34),
         Row(
@@ -473,13 +496,13 @@ class _SuccessStep extends StatelessWidget {
         ),
         const SizedBox(height: 28),
         const Text(
-          'Đổi mật khẩu thành công',
+          'Yêu cầu đã được gửi',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 10),
         const Text(
-          'Bạn có thể sử dụng mật khẩu mới để đăng nhập vào Daisy Shop.',
+          'Nếu tài khoản tồn tại, Daisy Shop sẽ gửi hướng dẫn đặt lại mật khẩu theo cấu hình Supabase Auth.',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppTheme.onSurfaceVariant, height: 1.5),
         ),

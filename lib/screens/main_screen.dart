@@ -63,7 +63,10 @@ class _MainScreenState extends State<MainScreen> {
     _loadDatabaseData();
   }
 
-  Future<void> _loadDatabaseData() async {
+  Future<void> _loadDatabaseData({bool showLoading = true}) async {
+    if (showLoading && mounted) {
+      setState(() => _loading = true);
+    }
     try {
       final results = await Future.wait([
         ProductService.fetchAll(),
@@ -82,7 +85,7 @@ class _MainScreenState extends State<MainScreen> {
       final dbReviews = results[5] as List<ProductReview>;
 
       setState(() {
-        if (dbProducts.isNotEmpty) products = dbProducts;
+        products = dbProducts;
         if (dbProfile != null) customerProfile = dbProfile;
         cartItems
           ..clear()
@@ -115,9 +118,24 @@ class _MainScreenState extends State<MainScreen> {
       selectedIndex = index;
       if (index == 3) accountPage = _AccountPage.root;
     });
+    if (index == 0 || index == 1) {
+      unawaited(_loadDatabaseData(showLoading: false));
+    }
   }
 
   void addToCart(Product product, String size) {
+    final currentQuantity = cartItems
+        .where((item) => item.id == product.id)
+        .fold<int>(0, (total, item) => total + item.quantity);
+    if (product.stock <= 0 || currentQuantity >= product.stock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sản phẩm đã hết hàng hoặc vượt quá tồn kho'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     setState(() {
       final index = cartItems.indexWhere(
         (item) => item.id == product.id && item.size == size,
@@ -156,6 +174,17 @@ class _MainScreenState extends State<MainScreen> {
       removeCartItem(key);
       return;
     }
+    final item = cartItems.firstWhere((item) => item.key == key);
+    final product = products.where((product) => product.id == item.id).firstOrNull;
+    if (product != null && quantity > product.stock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Chỉ còn ${product.stock} sản phẩm trong kho'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     setState(() {
       final index = cartItems.indexWhere((item) => item.key == key);
       if (index != -1) {
@@ -172,6 +201,13 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Đặt hàng — await DB để đảm bảo dữ liệu được lưu trước khi báo thành công.
   Future<bool> addOrder(ShopOrder order, {bool clearCart = false}) async {
+    final stockError = _stockErrorForOrder(order);
+    if (stockError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(stockError), behavior: SnackBarBehavior.floating),
+      );
+      return false;
+    }
     try {
       await OrderService.create(order);
     } catch (e) {
@@ -206,6 +242,22 @@ class _MainScreenState extends State<MainScreen> {
       if (clearCart) cartItems.clear();
     });
     return true;
+  }
+
+  String? _stockErrorForOrder(ShopOrder order) {
+    final quantities = <String, int>{};
+    for (final item in order.items) {
+      quantities[item.id] = (quantities[item.id] ?? 0) + item.quantity;
+    }
+    for (final entry in quantities.entries) {
+      final product = products.where((product) => product.id == entry.key).firstOrNull;
+      if (product == null) continue;
+      if (product.stock <= 0) return '${product.name} đã hết hàng';
+      if (entry.value > product.stock) {
+        return '${product.name} chỉ còn ${product.stock} sản phẩm';
+      }
+    }
+    return null;
   }
 
   void goHome() => setState(() => selectedIndex = 0);
@@ -305,6 +357,7 @@ class _MainScreenState extends State<MainScreen> {
           behavior: SnackBarBehavior.floating,
         ),
       );
+      rethrow;
     }
   }
 
@@ -333,15 +386,16 @@ class _MainScreenState extends State<MainScreen> {
           );
           final product = products.firstWhere(
             (p) => p.id == orderItem.id,
-            orElse: () => Product(
-              id: orderItem.id,
-              name: orderItem.name,
-              price: orderItem.unitPrice,
-              category: '',
-              imageUrl: orderItem.imageUrl ?? '',
-              description: '',
-              rating: 0,
-            ),
+              orElse: () => Product(
+                id: orderItem.id,
+                name: orderItem.name,
+                price: orderItem.unitPrice,
+                category: '',
+                imageUrl: orderItem.imageUrl ?? '',
+                description: '',
+                rating: 0,
+                stock: orderItem.quantity,
+              ),
           );
           CartService.addOrIncrement(
             product,

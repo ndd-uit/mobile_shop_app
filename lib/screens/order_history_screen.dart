@@ -50,6 +50,9 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
 
   String statusLabel(OrderStatus status) {
     return switch (status) {
+      OrderStatus.pendingPayment => 'Chờ thanh toán',
+      OrderStatus.pendingConfirmation => 'Chờ xác nhận',
+      OrderStatus.preparing => 'Đang chuẩn bị',
       OrderStatus.delivering => 'Đang giao',
       OrderStatus.completed => 'Đã hoàn thành',
       OrderStatus.cancelled => 'Đã hủy',
@@ -60,6 +63,9 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
 
   IconData statusIcon(OrderStatus status) {
     return switch (status) {
+      OrderStatus.pendingPayment => Icons.payments_outlined,
+      OrderStatus.pendingConfirmation => Icons.schedule,
+      OrderStatus.preparing => Icons.inventory_2_outlined,
       OrderStatus.delivering => Icons.local_shipping,
       OrderStatus.completed => Icons.check_circle,
       OrderStatus.cancelled => Icons.cancel,
@@ -70,6 +76,9 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
 
   Color statusColor(OrderStatus status) {
     return switch (status) {
+      OrderStatus.pendingPayment => const Color(0xFF8A5A00),
+      OrderStatus.pendingConfirmation => AppTheme.primary,
+      OrderStatus.preparing => AppTheme.primary,
       OrderStatus.delivering => AppTheme.primary,
       OrderStatus.completed => AppTheme.secondary,
       OrderStatus.cancelled => AppTheme.error,
@@ -80,6 +89,9 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
 
   Color statusBackground(OrderStatus status) {
     return switch (status) {
+      OrderStatus.pendingPayment => const Color(0xFFFFDEA5),
+      OrderStatus.pendingConfirmation => AppTheme.primaryContainer,
+      OrderStatus.preparing => AppTheme.primaryContainer,
       OrderStatus.delivering => AppTheme.primaryContainer,
       OrderStatus.completed => AppTheme.surfaceContainer,
       OrderStatus.cancelled => AppTheme.errorContainer,
@@ -146,6 +158,9 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   Widget _buildFilters() {
     final filters = <(String, OrderStatus?)>[
       ('Tất cả', null),
+      ('Chờ thanh toán', OrderStatus.pendingPayment),
+      ('Chờ xác nhận', OrderStatus.pendingConfirmation),
+      ('Chuẩn bị', OrderStatus.preparing),
       ('Đang giao', OrderStatus.delivering),
       ('Đã hoàn thành', OrderStatus.completed),
       ('Đã hủy', OrderStatus.cancelled),
@@ -290,7 +305,10 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                   ),
                   child: const Text('Xem chi tiết'),
                 ),
-                if (order.status == OrderStatus.delivering) ...[
+                if (order.status == OrderStatus.pendingPayment ||
+                    order.status == OrderStatus.pendingConfirmation ||
+                    order.status == OrderStatus.preparing ||
+                    order.status == OrderStatus.delivering) ...[
                   OutlinedButton(
                     onPressed: () => _performAction(order, OrderAction.cancel),
                     style: OutlinedButton.styleFrom(
@@ -306,6 +324,22 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                     ),
                     child: const Text('Hủy đơn'),
                   ),
+                  if (order.status == OrderStatus.delivering)
+                    FilledButton(
+                      onPressed: () => _markAsCompleted(order),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.primaryContainer,
+                        foregroundColor: AppTheme.onPrimaryContainer,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                      ),
+                      child: const Text('Đã nhận hàng'),
+                    ),
                 ],
                 if (order.status == OrderStatus.completed) ...[
                   OutlinedButton(
@@ -514,6 +548,20 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
               ? 'Đã hủy đơn hàng #${order.id}'
               : 'Đã gửi yêu cầu hoàn hàng #${order.id}',
         ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _markAsCompleted(ShopOrder order) {
+    final updated = order.copyWith(
+      status: OrderStatus.completed,
+      statusUpdatedAt: DateTime.now(),
+    );
+    widget.onOrderUpdated?.call(updated);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Đơn hàng #${order.id} đã hoàn thành'),
         behavior: SnackBarBehavior.floating,
       ),
     );

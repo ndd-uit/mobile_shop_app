@@ -167,6 +167,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   String statusLabel(OrderStatus status) {
     return switch (status) {
+      OrderStatus.pendingPayment => 'Chờ thanh toán',
+      OrderStatus.pendingConfirmation => 'Chờ xác nhận',
+      OrderStatus.preparing => 'Đang chuẩn bị',
       OrderStatus.delivering => 'Đang giao',
       OrderStatus.completed => 'Đã hoàn thành',
       OrderStatus.cancelled => 'Đã hủy',
@@ -177,6 +180,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   IconData statusIcon(OrderStatus status) {
     return switch (status) {
+      OrderStatus.pendingPayment => Icons.payments_outlined,
+      OrderStatus.pendingConfirmation => Icons.schedule,
+      OrderStatus.preparing => Icons.inventory_2_outlined,
       OrderStatus.delivering => Icons.local_shipping,
       OrderStatus.completed => Icons.check_circle,
       OrderStatus.cancelled => Icons.cancel,
@@ -187,6 +193,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   Color statusColor(OrderStatus status) {
     return switch (status) {
+      OrderStatus.pendingPayment => const Color(0xFF6D4500),
+      OrderStatus.pendingConfirmation => AppTheme.onPrimaryContainer,
+      OrderStatus.preparing => AppTheme.onPrimaryContainer,
       OrderStatus.delivering => AppTheme.onPrimaryContainer,
       OrderStatus.completed => AppTheme.secondary,
       OrderStatus.cancelled => AppTheme.onErrorContainer,
@@ -197,6 +206,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   Color statusBackground(OrderStatus status) {
     return switch (status) {
+      OrderStatus.pendingPayment => const Color(0xFFFFDEA5),
+      OrderStatus.pendingConfirmation => AppTheme.primaryContainer,
+      OrderStatus.preparing => AppTheme.primaryContainer,
       OrderStatus.delivering => AppTheme.primaryContainer,
       OrderStatus.completed => AppTheme.surfaceContainer,
       OrderStatus.cancelled => AppTheme.errorContainer,
@@ -441,13 +453,28 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final deliverySteps = <_TrackingData>[
       _TrackingData(
         title: 'Chờ xác nhận',
-        detail: formatDateTime(ordered),
-        state: _TrackingState.completed,
+        detail: order.status == OrderStatus.pendingPayment
+            ? 'Đơn hàng đang chờ bạn chuyển khoản'
+            : formatDateTime(ordered),
+        state: order.status == OrderStatus.pendingPayment
+            ? _TrackingState.pending
+            : order.status == OrderStatus.pendingConfirmation
+            ? _TrackingState.current
+            : _TrackingState.completed,
       ),
       _TrackingData(
         title: 'Đang chuẩn bị',
-        detail: formatDateTime(prepared),
-        state: _TrackingState.completed,
+        detail: order.status == OrderStatus.pendingConfirmation
+            ? null
+            : order.status == OrderStatus.preparing
+            ? 'Shop đang chuẩn bị sản phẩm'
+            : formatDateTime(prepared),
+        state: order.status == OrderStatus.preparing
+            ? _TrackingState.current
+            : order.status == OrderStatus.pendingPayment ||
+                  order.status == OrderStatus.pendingConfirmation
+            ? _TrackingState.pending
+            : _TrackingState.completed,
       ),
       _TrackingData(
         title: 'Đang vận chuyển',
@@ -456,14 +483,24 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             : formatDateTime(shipped),
         state: order.status == OrderStatus.delivering
             ? _TrackingState.current
+            : order.status == OrderStatus.pendingPayment ||
+                  order.status == OrderStatus.pendingConfirmation ||
+                  order.status == OrderStatus.preparing
+            ? _TrackingState.pending
             : _TrackingState.completed,
       ),
       _TrackingData(
         title: 'Đã giao',
-        detail: order.status == OrderStatus.delivering
+        detail: order.status == OrderStatus.delivering ||
+                order.status == OrderStatus.pendingPayment ||
+                order.status == OrderStatus.pendingConfirmation ||
+                order.status == OrderStatus.preparing
             ? null
             : formatDateTime(delivered),
-        state: order.status == OrderStatus.delivering
+        state: order.status == OrderStatus.delivering ||
+                order.status == OrderStatus.pendingPayment ||
+                order.status == OrderStatus.pendingConfirmation ||
+                order.status == OrderStatus.preparing
             ? _TrackingState.pending
             : _TrackingState.completed,
       ),
@@ -553,21 +590,48 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
 
-    if (order.status == OrderStatus.delivering) {
-      return SizedBox(
-        height: 48,
-        child: OutlinedButton.icon(
-          onPressed: () => performAction(OrderAction.cancel),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppTheme.error,
-            side: const BorderSide(color: AppTheme.error),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+    if (order.status == OrderStatus.pendingPayment ||
+        order.status == OrderStatus.pendingConfirmation ||
+        order.status == OrderStatus.preparing ||
+        order.status == OrderStatus.delivering) {
+      return Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: 48,
+              child: OutlinedButton.icon(
+                onPressed: () => performAction(OrderAction.cancel),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.error,
+                  side: const BorderSide(color: AppTheme.error),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.cancel_outlined),
+                label: const Text('Hủy đơn'),
+              ),
             ),
           ),
-          icon: const Icon(Icons.cancel_outlined),
-          label: const Text('Hủy đơn'),
-        ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: SizedBox(
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: order.status == OrderStatus.delivering
+                    ? markAsCompleted
+                    : null,
+                style: buttonStyle,
+                icon: const Icon(Icons.check_circle_outline),
+                label: Text(
+                  order.status == OrderStatus.delivering
+                      ? 'Đã nhận hàng'
+                      : 'Chờ xử lý',
+                ),
+              ),
+            ),
+          ),
+        ],
       );
     }
 
@@ -611,6 +675,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         onPressed: () => reorder(context),
         style: buttonStyle,
         child: const Text('Mua lại'),
+      ),
+    );
+  }
+
+  void markAsCompleted() {
+    final updated = order.copyWith(
+      status: OrderStatus.completed,
+      statusUpdatedAt: DateTime.now(),
+    );
+    setState(() => order = updated);
+    widget.onOrderUpdated?.call(updated);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Đơn hàng đã hoàn thành. Bạn có thể viết đánh giá.'),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }

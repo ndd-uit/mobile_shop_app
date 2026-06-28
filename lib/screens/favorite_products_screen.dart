@@ -4,7 +4,6 @@ import '../models/customer_profile.dart';
 import '../models/product.dart';
 import '../models/shop_order.dart';
 import '../theme/app_theme.dart';
-import '../widgets/size_selection_bottom_sheet.dart';
 import 'product_detail_screen.dart';
 
 class FavoriteProductsScreen extends StatefulWidget {
@@ -133,32 +132,11 @@ class _FavoriteProductsScreenState extends State<FavoriteProductsScreen> {
     });
   }
 
-  /// Thêm các sản phẩm đã chọn vào giỏ.
-  /// Nếu chỉ chọn 1 sản phẩm → hiện bottom sheet chọn size.
-  /// Nếu chọn nhiều → thêm với size mặc định 'M'.
+  /// Thêm các sản phẩm đã chọn vào giỏ với size mặc định 'M'.
   void _addSelectedToCart() {
     final selectedProducts = widget.products
         .where((product) => selectedProductIds.contains(product.id))
         .toList();
-
-    if (selectedProducts.length == 1) {
-      final product = selectedProducts.first;
-      showSizeSelectionBottomSheet(
-        context: context,
-        product: product,
-        onConfirm: (size) {
-          widget.onAddToCart(product, size);
-          setState(() => selectedProductIds.clear());
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Đã thêm "${product.name}" (size $size) vào giỏ hàng'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        },
-      );
-      return;
-    }
 
     for (final product in selectedProducts) {
       widget.onAddToCart(product, 'M');
