@@ -327,7 +327,7 @@ class _CategoryChips extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
         itemBuilder: (context, index) {
           final category = categories[index];
           final isSelected = category == selectedCategory;
@@ -391,7 +391,7 @@ class _HeroBanner extends StatelessWidget {
             Image.network(
               'https://lh3.googleusercontent.com/aida-public/AB6AXuCKAVi9ZkVAUyLNKxtS_f4Qd9fiiJqO5vqMr9lbS-oEwj0Y0m4BcM5PpzfuHoBH_jsuXz7ixgOEkf1ykWznIS-rQsdBVuAZFJVzlGhlLFEzxkJsC4aYGrgiGVGxFibNESgW6TJ0yVqQKF3QKzsuOmmDwhlmwFO1ZpOfywLbf9v1-aLMbDSbEgogBJhf3ndKr6dO_UO--ZT6SSHj7D0-iJ_NAtyLxxnjF5dziuNbMhQhh81yzni_VQtj_9u9dTlHDN5jBVnZOJSISSs',
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) {
+              errorBuilder: (_, _, _) {
                 return Container(
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
@@ -502,7 +502,7 @@ class _ProductCard extends StatelessWidget {
                   Image.network(
                     product.imageUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) {
+                    errorBuilder: (_, _, _) {
                       return Container(
                         color: const Color(0xFFF5F3F3),
                         alignment: Alignment.center,

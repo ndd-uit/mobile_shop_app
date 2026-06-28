@@ -1104,7 +1104,7 @@ class _ReviewCard extends StatelessWidget {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: review.imagePaths.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
                   final url = review.imagePaths[i];
                   return GestureDetector(
@@ -1116,7 +1116,7 @@ class _ReviewCard extends StatelessWidget {
                         width: 80,
                         height: 80,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        errorBuilder: (_, _, _) => Container(
                           width: 80,
                           height: 80,
                           color: AppTheme.surfaceContainerLow,
@@ -1265,7 +1265,7 @@ class _ImageViewerState extends State<_ImageViewer> {
               child: Image.network(
                 widget.urls[i],
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(
+                errorBuilder: (_, _, _) => const Icon(
                   Icons.broken_image_outlined,
                   color: Colors.white54,
                   size: 64,
